@@ -15,3 +15,8 @@ build/
 *.ogg
 !tests/fixtures/*
 .DS_Store
+
+# Planning files
+task_plan.md
+findings.md
+progress.md
