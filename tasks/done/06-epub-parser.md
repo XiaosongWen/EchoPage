@@ -15,8 +15,8 @@ An EPUB is a zip. `META-INF/container.xml` points to the OPF. The OPF `<spine>` 
 5. Skip empty blocks and whitespace-only text.
 
 ## Acceptance Criteria
-- [ ] The fixture EPUB unpacks and its spine order matches the OPF.
-- [ ] Sentences from a paragraph with `<em>` inside come out as whole sentences.
-- [ ] Offsets map back: `original_text[char_start:char_end] == sentence text` for every sentence.
-- [ ] A zip with a `../evil` entry is rejected.
-- [ ] Tests cover abbreviations ("Mr. Smith went.") and quotes.
+- [x] The fixture EPUB unpacks and its spine order matches the OPF.
+- [x] Sentences from a paragraph with `<em>` inside come out as whole sentences.
+- [x] Offsets map back: `original_text[char_start:char_end] == sentence text` for every sentence.
+- [x] A zip with a `../evil` entry is rejected.
+- [x] Tests cover abbreviations ("Mr. Smith went.") and quotes.

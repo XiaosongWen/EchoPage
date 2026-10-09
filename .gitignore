@@ -16,6 +16,7 @@ build/
 !tests/fixtures/*
 .DS_Store
 my_chapters/
+my_books/
 
 # Planning files
 task_plan.md

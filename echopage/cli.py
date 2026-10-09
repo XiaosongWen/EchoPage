@@ -54,6 +54,11 @@ def build_parser():
     p_dec.add_argument("--audible-key", help="Audible AAXC key (requires --audible-iv)")
     p_dec.add_argument("--audible-iv", help="Audible AAXC IV (requires --audible-key)")
 
+    # parse subcommand
+    p_parse = sub.add_parser("parse", help="unpack EPUB and extract chapter sentences")
+    p_parse.add_argument("epub", help="path to EPUB file")
+    p_parse.add_argument("--work-dir", help="working directory for unpacking")
+
     return p
 
 
@@ -73,6 +78,9 @@ def validate(args, parser):
             parser.error("--activation-bytes must be exactly 8 hex characters")
         if hasattr(args, "audible_key") and bool(args.audible_key) != bool(args.audible_iv):
             parser.error("--audible-key and --audible-iv must be given together")
+    elif args.command == "parse":
+        if not Path(args.epub).is_file():
+            parser.error(f"file not found: {args.epub}")
 
 
 def _phase(name, fn, *a, **kw):
@@ -129,7 +137,15 @@ def main(argv=None):
                 audible_iv=args.audible_iv,
             )
             print(f"Decrypted audio: {out_file}")
-    except (decryptor.DecryptionError, audio.AudioError) as exc:
+        elif args.command == "parse":
+            result = epub_parser.parse_epub(args.epub, work_dir=args.work_dir)
+            print(f"Unpacked EPUB: {args.epub}")
+            print(f"Work directory: {result['work_dir']}")
+            print(f"Spine chapters ({len(result['chapters'])}):")
+            for ch in result["chapters"]:
+                s_count = len(ch["sentences"])
+                print(f"  - {ch['id']} ({ch['href']}): {s_count} sentences")
+    except (decryptor.DecryptionError, audio.AudioError, epub_parser.EpubError) as exc:
         log.error("error: %s", exc)
         return 1
     return 0

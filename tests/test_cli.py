@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,7 @@ from echopage.cli import main
 def files(tmp_path):
     epub = tmp_path / "b.epub"
     audio = tmp_path / "a.m4b"
-    epub.write_bytes(b"x")
+    shutil.copy(Path(__file__).parent / "fixtures" / "book.epub", epub)
     audio.write_bytes(b"x")
     return ["build", "--epub", str(epub), "--audio", str(audio),
             "--output", str(tmp_path / "out.epub")]
@@ -72,7 +73,7 @@ def test_cli_build_aax_without_activation_bytes(tmp_path, capsys):
 
 def test_cli_build_aax_with_activation_bytes_succeeds(tmp_path, capsys):
     epub = tmp_path / "b.epub"
-    epub.write_bytes(b"x")
+    shutil.copy(Path(__file__).parent / "fixtures" / "book.epub", epub)
     aax = Path(__file__).parent / "fixtures" / "sample.aax"
     cmd = ["build", "--epub", str(epub), "--audio", str(aax),
            "--activation-bytes", "1a2b3c4d",
@@ -122,4 +123,23 @@ def test_cli_decrypt_subcommand(tmp_path, capsys):
     assert code == 0
     out = capsys.readouterr().out
     assert "Decrypted audio" in out
+
+
+def test_cli_parse_subcommand(tmp_path, capsys):
+    fixture = Path(__file__).parent / "fixtures" / "book.epub"
+    code = main(["parse", str(fixture), "--work-dir", str(tmp_path)])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Unpacked EPUB:" in out
+    assert "chapter01" in out
+    assert "chapter02" in out
+    assert "8 sentences" in out
+    assert "5 sentences" in out
+
+
+def test_cli_parse_missing_file(capsys):
+    with pytest.raises(SystemExit) as e:
+        main(["parse", "missing.epub"])
+    assert e.value.code != 0
+    assert "file not found" in capsys.readouterr().err
 
