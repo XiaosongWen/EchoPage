@@ -15,8 +15,8 @@ The PRD defines one command: `EchoPage build ...`. Build the argument parsing fi
 4. Add `--verbose` for debug logging.
 
 ## Acceptance Criteria
-- [ ] `echopage build --help` lists every flag with a description.
-- [ ] A missing file gives a clear error and a non-zero exit code.
-- [ ] A bad `--activation-bytes` value (e.g. `xyz`) is rejected with a clear error.
-- [ ] A valid invocation prints the 4 phase messages (stubs) and exits 0.
-- [ ] Unit tests cover argument validation.
+- [x] `echopage build --help` lists every flag with a description.
+- [x] A missing file gives a clear error and a non-zero exit code.
+- [x] A bad `--activation-bytes` value (e.g. `xyz`) is rejected with a clear error.
+- [x] A valid invocation prints the 4 phase messages (stubs) and exits 0.
+- [x] Unit tests cover argument validation.
