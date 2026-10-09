@@ -86,3 +86,40 @@ def test_cli_build_aax_with_activation_bytes_succeeds(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "decrypt: start" in out and "decrypt: done" in out
 
+
+def test_cli_probe_subcommand(capsys):
+    fixture = Path(__file__).parent / "fixtures" / "book.m4b"
+    code = main(["probe", str(fixture)])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Total chapters: 2" in out
+    assert "Tortoise and the Hare" in out
+
+
+def test_cli_split_subcommand(tmp_path, capsys):
+    fixture = Path(__file__).parent / "fixtures" / "book.m4b"
+    code = main(["split", str(fixture), "--out-dir", str(tmp_path)])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Split" in out
+    assert (tmp_path / "part_0.m4b").exists()
+    assert (tmp_path / "part_1.m4b").exists()
+
+
+def test_cli_towav_subcommand(tmp_path, capsys):
+    fixture = Path(__file__).parent / "fixtures" / "book.m4b"
+    out_wav = tmp_path / "out.wav"
+    code = main(["to-wav", str(fixture), str(out_wav)])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Converted to 16kHz mono WAV" in out
+    assert out_wav.exists()
+
+
+def test_cli_decrypt_subcommand(tmp_path, capsys):
+    fixture = Path(__file__).parent / "fixtures" / "book.mp3"
+    code = main(["decrypt", str(fixture), "--out-dir", str(tmp_path)])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Decrypted audio" in out
+

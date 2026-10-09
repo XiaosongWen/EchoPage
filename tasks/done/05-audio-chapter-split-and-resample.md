@@ -10,8 +10,8 @@ The aligner needs 16 kHz mono WAV, and the final EPUB needs audio files that map
 4. Return a list of `AudioUnit(path, start_s, end_s, title)` objects.
 
 ## Acceptance Criteria
-- [ ] The fixture file with 2 chapters yields 2 units with correct start/end times (within 0.1 s).
-- [ ] A file without chapters yields 1 unit.
-- [ ] The WAV output reports 16000 Hz, 1 channel via `ffprobe`.
-- [ ] Split parts' total duration is within 0.5 s of the source duration.
-- [ ] Unit tests cover chapter parsing from canned `ffprobe` JSON.
+- [x] The fixture file with 2 chapters yields 2 units with correct start/end times (within 0.1 s).
+- [x] A file without chapters yields 1 unit.
+- [x] The WAV output reports 16000 Hz, 1 channel via `ffprobe`.
+- [x] Split parts' total duration is within 0.5 s of the source duration.
+- [x] Unit tests cover chapter parsing from canned `ffprobe` JSON.

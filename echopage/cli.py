@@ -4,7 +4,7 @@ import re
 import sys
 from pathlib import Path
 
-from echopage import aligner, decryptor, packager, parser as epub_parser
+from echopage import aligner, audio, decryptor, packager, parser as epub_parser
 
 log = logging.getLogger("echopage")
 
@@ -30,18 +30,49 @@ def build_parser():
                    help="WhisperX model size (default: small)")
     b.add_argument("--device", choices=["cpu", "cuda", "mps"], help="compute device")
     b.add_argument("--work-dir", help="directory for intermediate files")
+    b.add_argument("--keep-temp", action="store_true", help="keep temporary intermediate files")
     b.add_argument("--verbose", action="store_true", help="enable debug logging")
+    # probe subcommand
+    p_probe = sub.add_parser("probe", help="inspect chapters and duration of an audio file")
+    p_probe.add_argument("audio", help="path to audio file")
+
+    # split subcommand
+    p_split = sub.add_parser("split", help="split audio file into chapter segments")
+    p_split.add_argument("audio", help="path to audio file")
+    p_split.add_argument("--out-dir", "-o", help="output directory for split chapters")
+
+    # to-wav subcommand
+    p_towav = sub.add_parser("to-wav", help="convert audio file to 16kHz mono WAV")
+    p_towav.add_argument("audio", help="path to audio file")
+    p_towav.add_argument("output", help="path to output WAV file")
+
+    # decrypt subcommand
+    p_dec = sub.add_parser("decrypt", help="decrypt an Audible audio file")
+    p_dec.add_argument("audio", help="path to audio file")
+    p_dec.add_argument("--out-dir", "-o", help="output directory for decrypted file")
+    p_dec.add_argument("--activation-bytes", help="Audible activation bytes (8 hex characters)")
+    p_dec.add_argument("--audible-key", help="Audible AAXC key (requires --audible-iv)")
+    p_dec.add_argument("--audible-iv", help="Audible AAXC IV (requires --audible-key)")
+
     return p
 
 
 def validate(args, parser):
-    for path in [args.epub, *args.audio]:
-        if not Path(path).is_file():
-            parser.error(f"file not found: {path}")
-    if args.activation_bytes and not re.fullmatch(r"[0-9a-fA-F]{8}", args.activation_bytes):
-        parser.error("--activation-bytes must be exactly 8 hex characters")
-    if bool(args.audible_key) != bool(args.audible_iv):
-        parser.error("--audible-key and --audible-iv must be given together")
+    if args.command == "build":
+        for path in [args.epub, *args.audio]:
+            if not Path(path).is_file():
+                parser.error(f"file not found: {path}")
+        if args.activation_bytes and not re.fullmatch(r"[0-9a-fA-F]{8}", args.activation_bytes):
+            parser.error("--activation-bytes must be exactly 8 hex characters")
+        if bool(args.audible_key) != bool(args.audible_iv):
+            parser.error("--audible-key and --audible-iv must be given together")
+    elif args.command in ("probe", "split", "to-wav", "decrypt"):
+        if not Path(args.audio).is_file():
+            parser.error(f"file not found: {args.audio}")
+        if getattr(args, "activation_bytes", None) and not re.fullmatch(r"[0-9a-fA-F]{8}", args.activation_bytes):
+            parser.error("--activation-bytes must be exactly 8 hex characters")
+        if hasattr(args, "audible_key") and bool(args.audible_key) != bool(args.audible_iv):
+            parser.error("--audible-key and --audible-iv must be given together")
 
 
 def _phase(name, fn, *a, **kw):
@@ -52,15 +83,15 @@ def _phase(name, fn, *a, **kw):
 
 
 def run_build(args):
-    audio = _phase("decrypt", decryptor.decrypt, args.audio,
-                   activation_bytes=args.activation_bytes,
-                   audible_key=args.audible_key, audible_iv=args.audible_iv,
-                   work_dir=args.work_dir)
+    audio_files = _phase("decrypt", decryptor.decrypt, args.audio,
+                         activation_bytes=args.activation_bytes,
+                         audible_key=args.audible_key, audible_iv=args.audible_iv,
+                         work_dir=args.work_dir)
     book = _phase("parse", epub_parser.parse, args.epub)
-    alignment = _phase("align", aligner.align, book, audio,
+    alignment = _phase("align", aligner.align, book, audio_files,
                        granularity=args.granularity, model_size=args.model_size,
                        device=args.device, work_dir=args.work_dir)
-    _phase("package", packager.package, args.epub, audio, alignment, args.output)
+    _phase("package", packager.package, args.epub, audio_files, alignment, args.output)
 
 
 def main(argv=None):
@@ -72,8 +103,33 @@ def main(argv=None):
     )
     validate(args, parser)
     try:
-        run_build(args)
-    except decryptor.DecryptionError as exc:
+        if args.command == "build":
+            run_build(args)
+        elif args.command == "probe":
+            chapters = audio.probe_chapters(args.audio)
+            print(f"File: {args.audio}")
+            print(f"Total chapters: {len(chapters)}")
+            for i, ch in enumerate(chapters, 1):
+                dur = max(0.0, ch.end_s - ch.start_s)
+                print(f"  [{i}] {ch.title} ({ch.start_s:.2f}s - {ch.end_s:.2f}s, duration: {dur:.2f}s)")
+        elif args.command == "split":
+            units = audio.split_audio(args.audio, out_dir=args.out_dir)
+            print(f"Split {args.audio} into {len(units)} parts:")
+            for u in units:
+                print(f"  {u.path} ({u.title})")
+        elif args.command == "to-wav":
+            out_file = audio.to_wav16k(args.audio, args.output)
+            print(f"Converted to 16kHz mono WAV: {out_file}")
+        elif args.command == "decrypt":
+            out_file = decryptor.decrypt_file(
+                args.audio,
+                out_dir=args.out_dir,
+                activation_bytes=args.activation_bytes,
+                audible_key=args.audible_key,
+                audible_iv=args.audible_iv,
+            )
+            print(f"Decrypted audio: {out_file}")
+    except (decryptor.DecryptionError, audio.AudioError) as exc:
         log.error("error: %s", exc)
         return 1
     return 0
