@@ -73,6 +73,12 @@ def build_parser():
     p_inject.add_argument("work_dir", help="work directory containing unpacked EPUB or XHTML files")
     p_inject.add_argument("alignment", help="path to alignment JSON file")
 
+    # generate-smil subcommand
+    p_smil = sub.add_parser("generate-smil", help="generate SMIL 3.0 Media Overlays playlists and copy audio files")
+    p_smil.add_argument("work_dir", help="work directory containing unpacked EPUB")
+    p_smil.add_argument("alignment", help="path to alignment JSON file")
+    p_smil.add_argument("--audio", nargs="*", help="optional audio source file(s) or directory")
+
     return p
 
 
@@ -106,6 +112,15 @@ def validate(args, parser):
             parser.error(f"directory not found: {args.work_dir}")
         if not Path(args.alignment).is_file():
             parser.error(f"file not found: {args.alignment}")
+    elif args.command == "generate-smil":
+        if not Path(args.work_dir).is_dir():
+            parser.error(f"directory not found: {args.work_dir}")
+        if not Path(args.alignment).is_file():
+            parser.error(f"file not found: {args.alignment}")
+        if getattr(args, "audio", None):
+            for a in args.audio:
+                if not Path(a).exists():
+                    parser.error(f"audio path not found: {a}")
 
 
 def _phase(name, fn, *a, **kw):
@@ -192,6 +207,11 @@ def main(argv=None):
             print(f"Injected spans into {len(results)} chapters:")
             for ch_id, pth in results.items():
                 print(f"  - {ch_id}: {pth}")
+        elif args.command == "generate-smil":
+            results = packager.generate_smil_playlists(args.work_dir, args.alignment, audio_source=args.audio)
+            print(f"Generated SMIL playlists for {len(results)} chapters:")
+            for ch_id, meta in results.items():
+                print(f"  - {ch_id}: {meta.smil_path.name} ({meta.duration_clock}, {meta.par_count} clips)")
     except (decryptor.DecryptionError, audio.AudioError, epub_parser.EpubError, aligner.AlignmentError, packager.PackagerError) as exc:
         log.error("error: %s", exc)
         return 1

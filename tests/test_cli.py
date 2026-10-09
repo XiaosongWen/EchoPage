@@ -177,3 +177,28 @@ def test_cli_align_subcommand(tmp_path, capsys, monkeypatch):
     assert "mo_s_0001" in out
     assert out_json.is_file()
 
+
+def test_cli_generate_smil_missing_file(capsys):
+    with pytest.raises(SystemExit) as e:
+        main(["generate-smil", "missing_dir", "missing.json"])
+    assert e.value.code != 0
+    assert "directory not found" in capsys.readouterr().err
+
+
+def test_cli_generate_smil_subcommand(tmp_path, capsys):
+    from echopage import parser as epub_parser, packager
+    epub = Path(__file__).parent / "fixtures" / "book.epub"
+    align_file = Path(__file__).parent / "fixtures" / "alignment.sample.json"
+    audio_dir = Path(__file__).parent / "fixtures" / "book_parts"
+
+    work_dir = tmp_path / "epub_work"
+    epub_parser.unpack(epub, work_dir)
+    packager.inject_alignment_spans(work_dir, align_file)
+
+    code = main(["generate-smil", str(work_dir), str(align_file), "--audio", str(audio_dir)])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Generated SMIL playlists for 2 chapters:" in out
+    assert "chapter01.smil" in out
+    assert (work_dir / "EPUB" / "chapter01.smil").is_file()
+

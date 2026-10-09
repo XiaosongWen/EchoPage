@@ -10,11 +10,11 @@ A SMIL file is the "playlist" for one chapter. Each `<par>` pairs a text element
 4. `<audio src="audio/chapter01.mp3" .../>`: use the correct relative path to the audio asset.
 5. Add `epub:type="chapter"` to the `<seq>` (missing from the PRD example) and set a unique `id` on every `<par>`.
 6. Return the total duration of each SMIL (last `clipEnd`), which task 12 needs.
-7. Copy the audio files into the EPUB folder (`OEBPS/audio/`).
+7. Copy the audio files into the EPUB folder (`OEBPS/audio/` or `EPUB/audio/`).
 
 ## Acceptance Criteria
-- [ ] The output SMIL parses as XML and uses the `http://www.w3.org/ns/SMIL` namespace.
-- [ ] Clip times are formatted as `N.NNNs` and are in order.
-- [ ] Every `<text src>` fragment points to an ID that exists in the XHTML (test checks this).
-- [ ] Every `<audio src>` points to a file that exists in the folder.
-- [ ] Per-SMIL duration is returned and equals the last `clipEnd`.
+- [x] The output SMIL parses as XML and uses the `http://www.w3.org/ns/SMIL` namespace.
+- [x] Clip times are formatted as `N.NNNs` and are in order.
+- [x] Every `<text src>` fragment points to an ID that exists in the XHTML (test checks this).
+- [x] Every `<audio src>` points to a file that exists in the folder.
+- [x] Per-SMIL duration is returned and equals the last `clipEnd`.
