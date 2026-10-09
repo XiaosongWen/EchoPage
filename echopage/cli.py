@@ -175,9 +175,7 @@ def main(argv=None):
                     dur_s = (entry.end_ms - entry.start_ms) / 1000.0
                     print(f"    [{entry.element_id}] {entry.start_ms}ms - {entry.end_ms}ms ({dur_s:.2f}s, conf={entry.confidence:.2f}): {entry.text[:60]}")
             if args.json_out:
-                import json
-                with open(args.json_out, "w", encoding="utf-8") as f:
-                    json.dump(alignment, f, indent=2, ensure_ascii=False)
+                aligner.save_alignment(alignment, args.json_out)
                 print(f"Saved alignment to: {args.json_out}")
     except (decryptor.DecryptionError, audio.AudioError, epub_parser.EpubError, aligner.AlignmentError) as exc:
         log.error("error: %s", exc)

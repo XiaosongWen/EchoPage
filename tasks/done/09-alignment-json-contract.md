@@ -11,7 +11,7 @@
 5. Add a hand-written sample `tests/fixtures/alignment.sample.json`, so the packager can be built without running WhisperX.
 
 ## Acceptance Criteria
-- [ ] Round trip (save then load) gives identical data.
-- [ ] Validation rejects duplicate IDs, negative times and `end_ms <= start_ms`, each with a clear message.
-- [ ] The sample file validates and matches the fixture EPUB.
-- [ ] The schema is documented in `docs/alignment-format.md`.
+- [x] Round trip (save then load) gives identical data.
+- [x] Validation rejects duplicate IDs, negative times and `end_ms <= start_ms`, each with a clear message.
+- [x] The sample file validates and matches the fixture EPUB.
+- [x] The schema is documented in `docs/alignment-format.md`.

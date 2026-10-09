@@ -9,14 +9,22 @@ import shutil
 from pathlib import Path
 from typing import Any, Sequence, Union
 
+from echopage.alignment import (
+    ALIGNMENT_SCHEMA,
+    AlignedChapter,
+    AlignmentError,
+    AlignmentValidationError,
+    TimelineEntry,
+    format_element_id,
+    is_valid_element_id,
+    load_alignment,
+    save_alignment,
+    validate_alignment,
+)
 from echopage.audio import AudioUnit, prepare_audio_units, to_wav16k
 from echopage.parser import Sentence, parse_epub
 
 log = logging.getLogger("echopage.aligner")
-
-
-class AlignmentError(RuntimeError):
-    """Base exception for alignment errors."""
 
 
 class AlignmentMismatchError(AlignmentError, ValueError):
@@ -44,66 +52,6 @@ class HeardWord(dict):
     def score(self) -> float | None:
         val = self.get("score")
         return float(val) if val is not None else None
-
-
-class TimelineEntry(dict):
-    """Represents an aligned sentence timeline entry."""
-
-    @property
-    def element_id(self) -> str:
-        return str(self.get("element_id", ""))
-
-    @property
-    def text(self) -> str:
-        return str(self.get("text", ""))
-
-    @property
-    def start_ms(self) -> int:
-        return int(self.get("start_ms", 0))
-
-    @property
-    def end_ms(self) -> int:
-        return int(self.get("end_ms", 0))
-
-    @property
-    def duration_ms(self) -> int:
-        return max(0, self.end_ms - self.start_ms)
-
-    @property
-    def confidence(self) -> float:
-        return float(self.get("confidence", 0.0))
-
-    @property
-    def block_xpath(self) -> str:
-        return str(self.get("block_xpath", ""))
-
-    @property
-    def char_start(self) -> int:
-        return int(self.get("char_start", 0))
-
-    @property
-    def char_end(self) -> int:
-        return int(self.get("char_end", 0))
-
-
-class AlignedChapter(dict):
-    """Represents an aligned chapter linking spine item, audio, and sentence timeline."""
-
-    @property
-    def spine_item_id(self) -> str:
-        return str(self.get("spine_item_id", ""))
-
-    @property
-    def xhtml_filename(self) -> str:
-        return str(self.get("xhtml_filename", ""))
-
-    @property
-    def audio_filename(self) -> str:
-        return str(self.get("audio_filename", ""))
-
-    @property
-    def timeline(self) -> list[TimelineEntry]:
-        return self.get("timeline", [])
 
 
 def normalize_word(text: str) -> str:
