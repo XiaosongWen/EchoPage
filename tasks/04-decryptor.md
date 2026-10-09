@@ -14,9 +14,10 @@
 5. Wire it into the CLI.
 
 ## Acceptance Criteria
-- [ ] DRM-free input is returned untouched and no new file is written.
-- [ ] Detection works on fixtures even when the extension is renamed.
-- [ ] A missing key for an `.aax` file gives a clear error.
-- [ ] A missing ffmpeg gives a clear error.
-- [ ] Unit tests mock `subprocess` and check the exact FFmpeg command line for `.aax` and `.aaxc`.
-- [ ] Output keeps chapter metadata (`ffprobe -show_chapters` still lists chapters) when the source had them.
+- [x] DRM-free input is returned untouched and no new file is written.
+- [x] Detection works on fixtures even when the extension is renamed.
+- [x] A missing key for an `.aax` file gives a clear error.
+- [x] A missing ffmpeg gives a clear error.
+- [x] Unit tests mock `subprocess` and check the exact FFmpeg command line for `.aax` and `.aaxc`.
+- [x] Output keeps chapter metadata (`ffprobe -show_chapters` still lists chapters) when the source had them.
+

@@ -71,7 +71,11 @@ def main(argv=None):
         format="%(message)s", stream=sys.stdout, force=True,
     )
     validate(args, parser)
-    run_build(args)
+    try:
+        run_build(args)
+    except decryptor.DecryptionError as exc:
+        log.error("error: %s", exc)
+        return 1
     return 0
 
 

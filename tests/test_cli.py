@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from echopage.cli import main
@@ -54,3 +56,33 @@ def test_help_lists_flags(capsys):
                  "--audible-iv", "--granularity", "--model-size", "--device",
                  "--work-dir", "--verbose"):
         assert flag in out
+
+
+def test_cli_build_aax_without_activation_bytes(tmp_path, capsys):
+    epub = tmp_path / "b.epub"
+    epub.write_bytes(b"x")
+    aax = Path(__file__).parent / "fixtures" / "sample.aax"
+    cmd = ["build", "--epub", str(epub), "--audio", str(aax),
+           "--output", str(tmp_path / "out.epub")]
+    code = main(cmd)
+    assert code != 0
+    out = capsys.readouterr().out
+    assert "Missing activation bytes" in out
+
+
+def test_cli_build_aax_with_activation_bytes_succeeds(tmp_path, capsys):
+    epub = tmp_path / "b.epub"
+    epub.write_bytes(b"x")
+    aax = Path(__file__).parent / "fixtures" / "sample.aax"
+    cmd = ["build", "--epub", str(epub), "--audio", str(aax),
+           "--activation-bytes", "1a2b3c4d",
+           "--output", str(tmp_path / "out.epub"),
+           "--work-dir", str(tmp_path / "work")]
+    with pytest.MonkeyPatch.context() as mp:
+        from unittest.mock import MagicMock
+        mp.setattr("subprocess.run", lambda *a, **kw: MagicMock(returncode=0, stdout="", stderr=""))
+        code = main(cmd)
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "decrypt: start" in out and "decrypt: done" in out
+

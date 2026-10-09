@@ -2,90 +2,84 @@
 
 ## Session: 2026-10-08
 
-### Phase 1: Requirements & Discovery
-- **Status:** complete
-- **Started:** 2026-10-08 21:36
-- Actions taken:
-  - Read `tasks/03-audio-basics-and-test-fixtures.md` and related tasks (04, 05, 06, PRD).
-  - Verified local binaries: `ffmpeg`, `ffprobe`, and macOS `say`.
-  - Ran existing unit test suite (`7 passed`).
-  - Created `task_plan.md`, `findings.md`, and `progress.md`.
-- Files created/modified:
-  - `task_plan.md` (created)
-  - `findings.md` (created)
-  - `progress.md` (created)
+### Task 04: Decryptor Module
 
-### Phase 2: Design & Text/Audio Content Selection
+#### Phase 1: Requirements Analysis & Test Plan Design
 - **Status:** complete
-- **Started:** 2026-10-08 21:38
+- **Started:** 2026-10-08 21:54
 - Actions taken:
-  - Selected public-domain text: Aesop's Fables ("The Tortoise and the Hare" & "The North Wind and the Sun").
-  - Formatted 2 chapters containing quotes, abbreviations ("Mr. Fox"), and emphasis tags (`<em>full speed</em>`) to prepare for sentence tokenizer testing in Task 06.
-  - Calculated duration targets (~45s narration).
-
-### Phase 3: Fixture Generation & Validation
-- **Status:** complete
-- **Started:** 2026-10-08 21:39
-- Actions taken:
-  - Generated narration audio using macOS speech synthesis (`say`, Samantha voice).
-  - Encoded chapter MP3s (`ch01.mp3`, `ch02.mp3`, `chapter01.mp3`, `chapter02.mp3`).
-  - Concatenated and encoded `.m4b` (`book.m4b`) with embedded chapter metadata (Chapter 1: 0.0s - 23.833s; Chapter 2: 23.833s - 45.159s).
-  - Generated 16 kHz mono WAV (`sample_16k.wav`) via FFmpeg.
-  - Built compliant EPUB 3 files (`book.epub`, `sample.epub`) with uncompressed `mimetype` header, OPF manifest, spine, navigation document, and CSS.
-  - Authored `tests/fixtures/README.md` detailing provenance, licenses, and reproduction steps.
+  - Read `tasks/04-decryptor.md`, PRD specifications, and existing CLI code in `echopage/cli.py`.
+  - Analyzed container format headers (`ftyp`, `major_brand`, `compatible_brands`) for AAX, AAXC, M4B, MP3.
+  - Verified FFmpeg CLI options for `-activation_bytes`, `-audible_key`, and `-audible_iv`.
+  - Tested FFprobe behavior on real fixtures and renamed fixture files.
+  - Tested chapter metadata retention through FFmpeg `-vn -c:a copy` remuxing.
 - Files created/modified:
-  - `tests/fixtures/book.epub`
-  - `tests/fixtures/sample.epub`
-  - `tests/fixtures/book.m4b`
-  - `tests/fixtures/book.mp3`
-  - `tests/fixtures/ch01.mp3`
-  - `tests/fixtures/ch02.mp3`
-  - `tests/fixtures/chapter01.mp3`
-  - `tests/fixtures/chapter02.mp3`
-  - `tests/fixtures/sample_16k.wav`
-  - `tests/fixtures/README.md`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
 
-### Phase 4: Audio Primer Authoring
+#### Phase 2: Format Detection Implementation (`detect_format`)
 - **Status:** complete
-- **Started:** 2026-10-08 21:40
+- **Started:** 2026-10-08 22:00
 - Actions taken:
-  - Executed practice commands: `ffprobe -show_format -show_chapters tests/fixtures/book.m4b` and `ffmpeg -i in.mp3 -ac 1 -ar 16000 out.wav`.
-  - Authored `docs/audio-primer.md` covering containers vs codecs, stream copying (`-c:a copy`), AAX/AAXC DRM decryption, chapter markers, 16 kHz mono downsampling, ms vs seconds timestamps, and pasted the exact terminal command outputs.
-- Files created/modified:
-  - `docs/audio-primer.md`
+  - Created `AudioFormat(str)` subclass supporting dot-agnostic equality checks (`== ".m4b"` and `== "m4b"`).
+  - Implemented `detect_format` with primary `ffprobe` inspection of `format_name` and MP4 `tags` (`major_brand`, `compatible_brands`).
+  - Added binary header sniffing (`ID3`, MPEG sync header, and `ftyp` box scanning).
+  - Added synthetic test fixtures `tests/fixtures/sample.aax` and `tests/fixtures/sample.aaxc`.
+  - Updated `tests/fixtures/README.md`.
 
-### Phase 5: Testing & Acceptance Verification
+#### Phase 3: Decryption & Caching Implementation (`decrypt`)
 - **Status:** complete
-- **Started:** 2026-10-08 21:41
+- **Started:** 2026-10-08 22:01
 - Actions taken:
-  - Created automated test suite `tests/test_fixtures.py` verifying EPUB container compliance, XML validity, chapter structure, audio durations, chapter markers, WAV sample rate/channels, and documentation.
-  - Verified EPUB opening with macOS `mdls` and QuickLook preview.
-  - Verified audio playback and exact text match.
-  - Checked off all acceptance criteria in `tasks/03-audio-basics-and-test-fixtures.md`.
-  - Ran pytest suite (`12 passed`).
-- Files created/modified:
-  - `tests/test_fixtures.py`
-  - `tasks/03-audio-basics-and-test-fixtures.md`
+  - Implemented `decrypt_file` and `decrypt` in `echopage/decryptor.py`.
+  - Passthrough for DRM-free files (`.m4b`, `.mp3`) returning input path directly without writing files.
+  - Built command runners matching exact FFmpeg specifications for `.aax` (`-activation_bytes <hex> -i in.aax -vn -c:a copy out.m4b`) and `.aaxc` (`-audible_key <key> -audible_iv <iv> -i in.aaxc -vn -c:a copy out.m4b`).
+  - Implemented work directory cache detection (`out_path.is_file()`).
+  - Implemented `DecryptionError` with clear error messages and FFmpeg stderr capture.
+
+#### Phase 4: CLI Wiring & Parameter Compatibility
+- **Status:** complete
+- **Started:** 2026-10-08 22:02
+- Actions taken:
+  - Integrated `decryptor.decrypt` with `echopage/cli.py`.
+  - Handled both list inputs and single path inputs in `decrypt`.
+  - Handled `DecryptionError` in `cli.main` with logging and return code 1.
+  - Added CLI integration tests in `tests/test_cli.py`.
+
+#### Phase 5: Testing & Acceptance Verification
+- **Status:** complete
+- **Started:** 2026-10-08 22:02
+- Actions taken:
+  - Authored comprehensive test suite `tests/test_decryptor.py` (15 unit & integration tests).
+  - Verified exact subprocess command lines for `.aax` and `.aaxc`.
+  - Verified missing key, missing ffmpeg, and non-zero exit error handling.
+  - Verified format detection on renamed fixtures.
+  - Verified untouched passthrough and no-file-written for DRM-free inputs.
+  - Verified cache skipping.
+  - Verified chapter metadata preservation with `ffprobe -show_chapters`.
+  - Checked off all acceptance criteria in `tasks/04-decryptor.md`.
+  - Ran full test suite: all 29 tests passed.
 
 ## Test Results
-| Test | Input | Expected | Actual | Status |
-|------|-------|----------|--------|--------|
-| Baseline pytest | `pytest` | 7 passed | 7 passed | ✓ |
-| Fixture & primer pytest | `pytest` | 12 passed | 12 passed | ✓ |
-| EPUB container check | `zipfile` | mimetype first & uncompressed | mimetype stored, deflated payload | ✓ |
-| M4B chapter probe | `ffprobe -show_chapters` | 2 chapters, correct timestamps | 2 chapters (0.0s-23.833s, 23.833s-45.159s) | ✓ |
-| 16k WAV check | `ffprobe` | 16000 Hz, 1 channel | 16000 Hz, 1 channel (mono), pcm_s16le | ✓ |
+| Test Suite | Tests Run | Result | Notes |
+|---|---|---|---|
+| `tests/test_cli.py` | 8 | 8 passed | Validates CLI argument parsing and decryption integration |
+| `tests/test_decryptor.py` | 15 | 15 passed | Validates format detection, decryption, mock subprocess, errors, caching, chapters |
+| `tests/test_fixtures.py` | 5 | 5 passed | Validates EPUB and audio fixture integrity |
+| `tests/test_smoke.py` | 1 | 1 passed | Smoke test |
+| **Total** | **29** | **29 passed** | 100% pass rate in 0.54s |
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
-|-----------|-------|---------|------------|
-| 2026-10-08 21:39 | Missing `lxml` in system python | 1 | Ran script with `.venv/bin/python3` where dependencies are installed |
+|---|---|---|---|
+| 2026-10-08 22:03 | `NameError: name 'Path' is not defined` in `test_cli.py` | 1 | Added `from pathlib import Path` to `tests/test_cli.py` |
 
 ## 5-Question Reboot Check
 | Question | Answer |
-|----------|--------|
+|---|---|
 | Where am I? | Phase 5: Testing & Acceptance Verification (Complete) |
-| Where am I going? | Handoff to user |
-| What's the goal? | Complete Task 03 requirements (audio primer, test fixtures, README, command execution) |
-| What have I learned? | See findings.md |
-| What have I done? | Built complete fixture suite, authored audio primer with real terminal outputs, wrote automated tests, and verified all acceptance criteria |
+| Where am I going? | Handoff to user for review |
+| What's the goal? | Complete Task 04 requirements: decryptor module, format detection, exact ffmpeg commands, cache, clear errors, CLI wiring |
+| What have I learned? | FFprobe reads container brands accurately even for renamed files; stream copying preserves chapters intact |
+| What have I done? | Implemented `echopage/decryptor.py`, updated `echopage/cli.py`, added synthetic fixtures and tests, checked off all acceptance criteria |

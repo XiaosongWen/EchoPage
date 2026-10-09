@@ -41,6 +41,12 @@ All fixture assets in this directory are free of copyright restrictions and free
   - Chapter 1 standalone audio (~23.83 seconds).
 - [`ch02.mp3`](file:///Users/tomaswen/workspace/EchoPage/tests/fixtures/ch02.mp3) / [`chapter02.mp3`](file:///Users/tomaswen/workspace/EchoPage/tests/fixtures/chapter02.mp3)
   - Chapter 2 standalone audio (~21.33 seconds).
+- [`sample.aax`](file:///Users/tomaswen/workspace/EchoPage/tests/fixtures/sample.aax)
+  - Synthetic Audible AAX container format with `aax ` major brand in the `ftyp` box.
+  - Used for testing DRM format detection and AAX command construction without proprietary content.
+- [`sample.aaxc`](file:///Users/tomaswen/workspace/EchoPage/tests/fixtures/sample.aaxc)
+  - Synthetic Audible AAXC container format with `aaxc` major brand in the `ftyp` box.
+  - Used for testing DRM format detection and AAXC command construction.
 - [`sample_16k.wav`](file:///Users/tomaswen/workspace/EchoPage/tests/fixtures/sample_16k.wav)
   - Uncompressed PCM WAV (`pcm_s16le`, 16,000 Hz, mono, 16-bit).
   - Ideal input format for WhisperX forced alignment.
