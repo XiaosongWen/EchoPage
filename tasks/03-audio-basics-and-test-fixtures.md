@@ -18,8 +18,8 @@
    - `ffmpeg -i in.mp3 -ac 1 -ar 16000 out.wav`
 
 ## Acceptance Criteria
-- [ ] `docs/audio-primer.md` exists and covers container/codec, DRM, chapters, 16 kHz mono and ms vs seconds.
-- [ ] Fixture EPUB opens in an EPUB reader.
-- [ ] Fixture audio plays and its text matches the EPUB text.
-- [ ] Fixture sources and licenses are documented.
-- [ ] No DRM-protected or copyrighted audio is committed to the repo.
+- [x] `docs/audio-primer.md` exists and covers container/codec, DRM, chapters, 16 kHz mono and ms vs seconds.
+- [x] Fixture EPUB opens in an EPUB reader.
+- [x] Fixture audio plays and its text matches the EPUB text.
+- [x] Fixture sources and licenses are documented.
+- [x] No DRM-protected or copyrighted audio is committed to the repo.

@@ -13,4 +13,5 @@ build/
 *.wav
 *.flac
 *.ogg
+!tests/fixtures/*
 .DS_Store
