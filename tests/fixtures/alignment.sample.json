@@ -1,0 +1,146 @@
+[
+  {
+    "spine_item_id": "chapter01",
+    "xhtml_filename": "chapter01.xhtml",
+    "audio_filename": "part_0.m4b",
+    "timeline": [
+      {
+        "element_id": "mo_s_0001",
+        "text": "Chapter 1: The Tortoise and the Hare",
+        "start_ms": 31,
+        "end_ms": 2014,
+        "confidence": 1.0,
+        "block_xpath": "/*/*[2]/*/*[1]",
+        "char_start": 0,
+        "char_end": 36
+      },
+      {
+        "element_id": "mo_s_0002",
+        "text": "The Hare was once boasting of his speed before the other animals.",
+        "start_ms": 2295,
+        "end_ms": 5360,
+        "confidence": 1.0,
+        "block_xpath": "/*/*[2]/*/*[2]",
+        "char_start": 0,
+        "char_end": 65
+      },
+      {
+        "element_id": "mo_s_0003",
+        "text": "\"I have never yet been beaten,\" said he, \"when I put forth my full speed.",
+        "start_ms": 5741,
+        "end_ms": 9868,
+        "confidence": 1.0,
+        "block_xpath": "/*/*[2]/*/*[2]",
+        "char_start": 66,
+        "char_end": 139
+      },
+      {
+        "element_id": "mo_s_0004",
+        "text": "Mr. Fox can witness my victories.\"",
+        "start_ms": 10188,
+        "end_ms": 12192,
+        "confidence": 1.0,
+        "block_xpath": "/*/*[2]/*/*[2]",
+        "char_start": 140,
+        "char_end": 174
+      },
+      {
+        "element_id": "mo_s_0005",
+        "text": "The Tortoise said quietly, \"I accept your challenge.\"",
+        "start_ms": 12252,
+        "end_ms": 15037,
+        "confidence": 1.0,
+        "block_xpath": "/*/*[2]/*/*[3]",
+        "char_start": 0,
+        "char_end": 53
+      },
+      {
+        "element_id": "mo_s_0006",
+        "text": "\"That is a good joke,\" said the Hare; \"I could dance round you all the way.\"",
+        "start_ms": 15337,
+        "end_ms": 19104,
+        "confidence": 1.0,
+        "block_xpath": "/*/*[2]/*/*[3]",
+        "char_start": 54,
+        "char_end": 130
+      },
+      {
+        "element_id": "mo_s_0007",
+        "text": "\"Keep your boasting till you have beaten me,\" answered the Tortoise.",
+        "start_ms": 19464,
+        "end_ms": 22670,
+        "confidence": 1.0,
+        "block_xpath": "/*/*[2]/*/*[3]",
+        "char_start": 131,
+        "char_end": 199
+      },
+      {
+        "element_id": "mo_s_0008",
+        "text": "\"Shall we race?\"",
+        "start_ms": 23031,
+        "end_ms": 23732,
+        "confidence": 1.0,
+        "block_xpath": "/*/*[2]/*/*[3]",
+        "char_start": 200,
+        "char_end": 216
+      }
+    ]
+  },
+  {
+    "spine_item_id": "chapter02",
+    "xhtml_filename": "chapter02.xhtml",
+    "audio_filename": "part_1.m4b",
+    "timeline": [
+      {
+        "element_id": "mo_s_0009",
+        "text": "Chapter 2: The North Wind and the Sun",
+        "start_ms": 111,
+        "end_ms": 2296,
+        "confidence": 1.0,
+        "block_xpath": "/*/*[2]/*/*[1]",
+        "char_start": 0,
+        "char_end": 37
+      },
+      {
+        "element_id": "mo_s_0010",
+        "text": "The North Wind and the Sun had a dispute as to which was the most powerful.",
+        "start_ms": 2617,
+        "end_ms": 6024,
+        "confidence": 1.0,
+        "block_xpath": "/*/*[2]/*/*[2]",
+        "char_start": 0,
+        "char_end": 75
+      },
+      {
+        "element_id": "mo_s_0011",
+        "text": "While they were discussing it, a traveller came along wrapped in a warm cloak.",
+        "start_ms": 6305,
+        "end_ms": 10133,
+        "confidence": 0.929,
+        "block_xpath": "/*/*[2]/*/*[2]",
+        "char_start": 76,
+        "char_end": 154
+      },
+      {
+        "element_id": "mo_s_0012",
+        "text": "They agreed that the one who first succeeded in making the traveller strip off his cloak should be considered the stronger.",
+        "start_ms": 10454,
+        "end_ms": 16126,
+        "confidence": 0.952,
+        "block_xpath": "/*/*[2]/*/*[3]",
+        "char_start": 0,
+        "char_end": 123
+      },
+      {
+        "element_id": "mo_s_0013",
+        "text": "The North Wind tried first, but the harder he blew, the closer the traveller held his cloak.",
+        "start_ms": 16427,
+        "end_ms": 21338,
+        "confidence": 0.941,
+        "block_xpath": "/*/*[2]/*/*[3]",
+        "char_start": 124,
+        "char_end": 216
+      }
+    ]
+  }
+]

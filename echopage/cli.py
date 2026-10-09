@@ -59,6 +59,15 @@ def build_parser():
     p_parse.add_argument("epub", help="path to EPUB file")
     p_parse.add_argument("--work-dir", help="working directory for unpacking")
 
+    # align subcommand
+    p_align = sub.add_parser("align", help="align EPUB sentences to audio narration")
+    p_align.add_argument("epub", help="path to EPUB file")
+    p_align.add_argument("audio", nargs="+", help="audio file(s)")
+    p_align.add_argument("--model-size", choices=["small", "medium", "large-v3", "base", "tiny"], default="small")
+    p_align.add_argument("--device", choices=["cpu", "cuda", "mps"])
+    p_align.add_argument("--work-dir", help="working directory")
+    p_align.add_argument("--json-out", help="save alignment output JSON to file")
+
     return p
 
 
@@ -71,6 +80,12 @@ def validate(args, parser):
             parser.error("--activation-bytes must be exactly 8 hex characters")
         if bool(args.audible_key) != bool(args.audible_iv):
             parser.error("--audible-key and --audible-iv must be given together")
+    elif args.command == "align":
+        if not Path(args.epub).is_file():
+            parser.error(f"file not found: {args.epub}")
+        for path in args.audio:
+            if not Path(path).is_file():
+                parser.error(f"file not found: {path}")
     elif args.command in ("probe", "split", "to-wav", "decrypt"):
         if not Path(args.audio).is_file():
             parser.error(f"file not found: {args.audio}")
@@ -145,7 +160,26 @@ def main(argv=None):
             for ch in result["chapters"]:
                 s_count = len(ch["sentences"])
                 print(f"  - {ch['id']} ({ch['href']}): {s_count} sentences")
-    except (decryptor.DecryptionError, audio.AudioError, epub_parser.EpubError) as exc:
+        elif args.command == "align":
+            alignment = aligner.align(
+                args.epub,
+                args.audio,
+                model_size=args.model_size,
+                device=args.device,
+                work_dir=args.work_dir,
+            )
+            print(f"Aligned {len(alignment)} chapters:")
+            for ch in alignment:
+                print(f"  Chapter '{ch.spine_item_id}' ({ch.xhtml_filename} -> {ch.audio_filename}): {len(ch.timeline)} sentences")
+                for entry in ch.timeline:
+                    dur_s = (entry.end_ms - entry.start_ms) / 1000.0
+                    print(f"    [{entry.element_id}] {entry.start_ms}ms - {entry.end_ms}ms ({dur_s:.2f}s, conf={entry.confidence:.2f}): {entry.text[:60]}")
+            if args.json_out:
+                import json
+                with open(args.json_out, "w", encoding="utf-8") as f:
+                    json.dump(alignment, f, indent=2, ensure_ascii=False)
+                print(f"Saved alignment to: {args.json_out}")
+    except (decryptor.DecryptionError, audio.AudioError, epub_parser.EpubError, aligner.AlignmentError) as exc:
         log.error("error: %s", exc)
         return 1
     return 0

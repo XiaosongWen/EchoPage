@@ -7,11 +7,12 @@ from echopage.cli import main
 
 
 @pytest.fixture
-def files(tmp_path):
+def files(tmp_path, monkeypatch):
     epub = tmp_path / "b.epub"
     audio = tmp_path / "a.m4b"
     shutil.copy(Path(__file__).parent / "fixtures" / "book.epub", epub)
     audio.write_bytes(b"x")
+    monkeypatch.setattr("echopage.aligner.align", lambda *a, **kw: [])
     return ["build", "--epub", str(epub), "--audio", str(audio),
             "--output", str(tmp_path / "out.epub")]
 
@@ -82,6 +83,7 @@ def test_cli_build_aax_with_activation_bytes_succeeds(tmp_path, capsys):
     with pytest.MonkeyPatch.context() as mp:
         from unittest.mock import MagicMock
         mp.setattr("subprocess.run", lambda *a, **kw: MagicMock(returncode=0, stdout="", stderr=""))
+        mp.setattr("echopage.aligner.align", lambda *a, **kw: [])
         code = main(cmd)
     assert code == 0
     out = capsys.readouterr().out
@@ -142,4 +144,36 @@ def test_cli_parse_missing_file(capsys):
         main(["parse", "missing.epub"])
     assert e.value.code != 0
     assert "file not found" in capsys.readouterr().err
+
+
+def test_cli_align_missing_file(capsys):
+    with pytest.raises(SystemExit) as e:
+        main(["align", "missing.epub", "missing.mp3"])
+    assert e.value.code != 0
+    assert "file not found" in capsys.readouterr().err
+
+
+def test_cli_align_subcommand(tmp_path, capsys, monkeypatch):
+    epub = Path(__file__).parent / "fixtures" / "book.epub"
+    audio = Path(__file__).parent / "fixtures" / "book.m4b"
+    out_json = tmp_path / "out_align.json"
+
+    fake_timeline = [
+        {"element_id": "mo_s_0001", "text": "Sentence 1", "start_ms": 100, "end_ms": 1500, "confidence": 0.95}
+    ]
+    from echopage.aligner import AlignedChapter, TimelineEntry
+    fake_ch = AlignedChapter({
+        "spine_item_id": "ch01",
+        "xhtml_filename": "ch01.xhtml",
+        "audio_filename": "part_0.m4b",
+        "timeline": [TimelineEntry(t) for t in fake_timeline],
+    })
+    monkeypatch.setattr("echopage.aligner.align", lambda *a, **kw: [fake_ch])
+
+    code = main(["align", str(epub), str(audio), "--json-out", str(out_json)])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Aligned 1 chapters:" in out
+    assert "mo_s_0001" in out
+    assert out_json.is_file()
 

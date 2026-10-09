@@ -22,3 +22,8 @@ my_books/
 task_plan.md
 findings.md
 progress.md
+
+# Temporary extraction & parts
+.echopage_unpack_*/
+*_parts/
+

@@ -13,8 +13,8 @@ WhisperX gives timed words from what was *heard*. The EPUB gives the *known* tex
 7. Map each audio unit to a spine chapter (by order, or by title similarity). If the counts differ, fail with a clear message asking for manual mapping.
 
 ## Acceptance Criteria
-- [ ] The pure matching function has unit tests with fake word lists: exact match, one word misheard, one sentence missing in audio, extra words in audio.
-- [ ] On the fixture, every sentence gets `start_ms < end_ms`, and all times are in order.
-- [ ] Spot check: 3 sentences' timestamps line up with the audio when played.
-- [ ] Low-confidence sentences are reported in the log with their chapter and text.
-- [ ] A chapter/audio count mismatch gives an actionable error.
+- [x] The pure matching function has unit tests with fake word lists: exact match, one word misheard, one sentence missing in audio, extra words in audio.
+- [x] On the fixture, every sentence gets `start_ms < end_ms`, and all times are in order.
+- [x] Spot check: 3 sentences' timestamps line up with the audio when played.
+- [x] Low-confidence sentences are reported in the log with their chapter and text.
+- [x] A chapter/audio count mismatch gives an actionable error.
