@@ -11,8 +11,8 @@ SMIL points at elements by ID, so each aligned sentence must be wrapped in `<spa
 5. Write the modified XHTML back in place in the work directory.
 
 ## Acceptance Criteria
-- [ ] Every `element_id` in the alignment appears exactly once as an `id` in its XHTML.
-- [ ] The text content of each chapter is identical before and after (compare `''.join(root.itertext())` ignoring the added spans).
-- [ ] Output is well-formed XML and parses without error.
-- [ ] A test covers a sentence containing an `<em>` tag.
-- [ ] Existing IDs in the source XHTML are preserved, and a collision with `mo_s_*` is detected.
+- [x] Every `element_id` in the alignment appears exactly once as an `id` in its XHTML.
+- [x] The text content of each chapter is identical before and after (compare `''.join(root.itertext())` ignoring the added spans).
+- [x] Output is well-formed XML and parses without error.
+- [x] A test covers a sentence containing an `<em>` tag.
+- [x] Existing IDs in the source XHTML are preserved, and a collision with `mo_s_*` is detected.

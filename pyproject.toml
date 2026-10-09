@@ -18,3 +18,8 @@ echopage = "echopage.cli:main"
 
 [tool.setuptools]
 packages = ["echopage"]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::UserWarning:pyannote\\.audio\\..*",
+]

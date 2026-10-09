@@ -68,6 +68,11 @@ def build_parser():
     p_align.add_argument("--work-dir", help="working directory")
     p_align.add_argument("--json-out", help="save alignment output JSON to file")
 
+    # inject-spans subcommand
+    p_inject = sub.add_parser("inject-spans", help="inject sentence span IDs into XHTML documents")
+    p_inject.add_argument("work_dir", help="work directory containing unpacked EPUB or XHTML files")
+    p_inject.add_argument("alignment", help="path to alignment JSON file")
+
     return p
 
 
@@ -96,6 +101,11 @@ def validate(args, parser):
     elif args.command == "parse":
         if not Path(args.epub).is_file():
             parser.error(f"file not found: {args.epub}")
+    elif args.command == "inject-spans":
+        if not Path(args.work_dir).is_dir():
+            parser.error(f"directory not found: {args.work_dir}")
+        if not Path(args.alignment).is_file():
+            parser.error(f"file not found: {args.alignment}")
 
 
 def _phase(name, fn, *a, **kw):
@@ -177,7 +187,12 @@ def main(argv=None):
             if args.json_out:
                 aligner.save_alignment(alignment, args.json_out)
                 print(f"Saved alignment to: {args.json_out}")
-    except (decryptor.DecryptionError, audio.AudioError, epub_parser.EpubError, aligner.AlignmentError) as exc:
+        elif args.command == "inject-spans":
+            results = packager.inject_alignment_spans(args.work_dir, args.alignment)
+            print(f"Injected spans into {len(results)} chapters:")
+            for ch_id, pth in results.items():
+                print(f"  - {ch_id}: {pth}")
+    except (decryptor.DecryptionError, audio.AudioError, epub_parser.EpubError, aligner.AlignmentError, packager.PackagerError) as exc:
         log.error("error: %s", exc)
         return 1
     return 0
