@@ -13,7 +13,7 @@ WhisperX transcribes speech (Whisper) and then aligns words to exact times (wav2
 4. Record the findings in `docs/whisperx-notes.md`: versions, model download size and location, speed on the fixture, and device compatibility. Say whether `compute_type` needs to be `int8`/`float32` on CPU.
 
 ## Acceptance Criteria
-- [ ] The spike script runs end to end on the fixture and prints word start/end times in seconds.
-- [ ] Timings roughly match the audio (spot-check 3 words by listening).
-- [ ] `docs/whisperx-notes.md` records versions, devices that work, speed and model sizes.
-- [ ] Heavy dependencies are optional extras, so `pip install -e .` stays light.
+- [x] The spike script runs end to end on the fixture and prints word start/end times in seconds.
+- [x] Timings roughly match the audio (spot-check 3 words by listening).
+- [x] `docs/whisperx-notes.md` records versions, devices that work, speed and model sizes.
+- [x] Heavy dependencies are optional extras, so `pip install -e .` stays light.

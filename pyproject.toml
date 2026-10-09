@@ -11,6 +11,7 @@ dependencies = ["lxml", "beautifulsoup4", "nltk"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
+align = ["whisperx"]
 
 [project.scripts]
 echopage = "echopage.cli:main"
