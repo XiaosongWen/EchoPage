@@ -14,7 +14,8 @@ def files(tmp_path, monkeypatch):
     audio.write_bytes(b"x")
     monkeypatch.setattr("echopage.aligner.align", lambda *a, **kw: [])
     return ["build", "--epub", str(epub), "--audio", str(audio),
-            "--output", str(tmp_path / "out.epub")]
+            "--output", str(tmp_path / "out.epub"),
+            "--work-dir", str(tmp_path / "work")]
 
 
 def test_valid_runs_four_phases(files, capsys):
@@ -65,7 +66,8 @@ def test_cli_build_aax_without_activation_bytes(tmp_path, capsys):
     epub.write_bytes(b"x")
     aax = Path(__file__).parent / "fixtures" / "sample.aax"
     cmd = ["build", "--epub", str(epub), "--audio", str(aax),
-           "--output", str(tmp_path / "out.epub")]
+           "--output", str(tmp_path / "out.epub"),
+           "--work-dir", str(tmp_path / "work")]
     code = main(cmd)
     assert code != 0
     out = capsys.readouterr().out
@@ -170,7 +172,7 @@ def test_cli_align_subcommand(tmp_path, capsys, monkeypatch):
     })
     monkeypatch.setattr("echopage.aligner.align", lambda *a, **kw: [fake_ch])
 
-    code = main(["align", str(epub), str(audio), "--json-out", str(out_json)])
+    code = main(["align", str(epub), str(audio), "--json-out", str(out_json), "--work-dir", str(tmp_path / "work")])
     assert code == 0
     out = capsys.readouterr().out
     assert "Aligned 1 chapters:" in out
@@ -208,7 +210,7 @@ def test_cli_build_dry_run(capsys, tmp_path):
     audio = Path(__file__).parent / "fixtures" / "book.m4b"
     out_file = tmp_path / "out.epub"
 
-    code = main(["build", "--epub", str(epub), "--audio", str(audio), "--output", str(out_file), "--dry-run"])
+    code = main(["build", "--epub", str(epub), "--audio", str(audio), "--output", str(out_file), "--dry-run", "--work-dir", str(tmp_path / "work")])
     assert code == 0
     out = capsys.readouterr().out
     assert "Dry run: planned chapter-to-audio mapping:" in out
@@ -229,6 +231,7 @@ def test_cli_build_skip_spine(capsys, tmp_path):
         "--output", str(out_file),
         "--skip-spine", "chapter01",
         "--dry-run",
+        "--work-dir", str(tmp_path / "work"),
     ])
     assert code == 0
     out = capsys.readouterr().out
@@ -243,7 +246,7 @@ def test_cli_verbose_logger_filtering(tmp_path):
     audio = Path(__file__).parent / "fixtures" / "book.m4b"
     out_file = tmp_path / "out.epub"
 
-    code = main(["build", "--epub", str(epub), "--audio", str(audio), "--output", str(out_file), "--dry-run", "--verbose"])
+    code = main(["build", "--epub", str(epub), "--audio", str(audio), "--output", str(out_file), "--dry-run", "--verbose", "--work-dir", str(tmp_path / "work")])
     assert code == 0
     assert logging.getLogger("torio").level == logging.WARNING
     assert logging.getLogger("matplotlib").level == logging.WARNING

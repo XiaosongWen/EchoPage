@@ -412,31 +412,6 @@ def extract_sentences(
     return results
 
 
-def parse_epub(
-    epub_path: Union[str, Path],
-    work_dir: Union[str, Path, None] = None,
-) -> dict[str, Any]:
-    """High-level pipeline utility to unpack an EPUB and extract all chapter sentences.
-
-    Parameters
-    ----------
-    epub_path : Union[str, Path]
-        Path to the EPUB file.
-    work_dir : Union[str, Path, None], optional
-        Working directory for unpacking. If None, uses a temporary or sibling folder.
-
-    Returns
-    -------
-    dict[str, Any]
-        Dictionary with:
-        - "work_dir": Path
-        - "spine": list[PackageItem]
-        - "chapters": list[dict] with chapter metadata and extracted sentences.
-    """
-    epub_path = Path(epub_path)
-    if work_dir is None:
-        work_dir = epub_path.parent / f".echopage_unpack_{epub_path.stem}"
-
 def extract_navigation_metadata(
     work_dir: Union[str, Path],
 ) -> tuple[dict[str, str], dict[str, str]]:

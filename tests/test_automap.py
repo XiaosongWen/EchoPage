@@ -339,7 +339,7 @@ def test_horus_rising_real_book_auto_mapping():
 # 6. CLI Integration & Precedence Tests
 # ---------------------------------------------------------------------------
 
-def test_cli_build_dry_run_auto_map(capsys):
+def test_cli_build_dry_run_auto_map(capsys, tmp_path):
     """Acceptance criterion: Dry run prints planned matches and auto-skipped chapters."""
     epub_path = Path("my_books/Horus Rising: The Horus Heresy.epub")
     audio_path = Path("my_books/Horus Rising: The Horus Heresy.m4b")
@@ -351,9 +351,10 @@ def test_cli_build_dry_run_auto_map(capsys):
         "build",
         "--epub", str(epub_path),
         "--audio", str(audio_path),
-        "--output", "dummy.epub",
+        "--output", str(tmp_path / "dummy.epub"),
         "--dry-run",
         "--auto-map",
+        "--work-dir", str(tmp_path / "work"),
     ])
     assert exit_code == 0
     captured = capsys.readouterr().out
@@ -367,7 +368,7 @@ def test_cli_build_dry_run_auto_map(capsys):
     assert "Skipped 'TIMELINE' (id031): detected back-matter Timeline" in captured
 
 
-def test_cli_build_precedence_skip_spine(capsys):
+def test_cli_build_precedence_skip_spine(capsys, tmp_path):
     """Acceptance criterion: Manual --skip-spine overrides auto-matching."""
     epub_path = Path("my_books/Horus Rising: The Horus Heresy.epub")
     audio_path = Path("my_books/Horus Rising: The Horus Heresy.m4b")
@@ -379,9 +380,10 @@ def test_cli_build_precedence_skip_spine(capsys):
         "build",
         "--epub", str(epub_path),
         "--audio", str(audio_path),
-        "--output", "dummy.epub",
+        "--output", str(tmp_path / "dummy.epub"),
         "--dry-run",
         "--skip-spine", "id003,id004,id005,id007,id031",
+        "--work-dir", str(tmp_path / "work"),
     ])
     assert exit_code == 0
     captured = capsys.readouterr().out
@@ -391,7 +393,7 @@ def test_cli_build_precedence_skip_spine(capsys):
     assert "Auto-skipped chapters" not in captured
 
 
-def test_cli_build_no_auto_map_raises_mismatch(capsys):
+def test_cli_build_no_auto_map_raises_mismatch(capsys, tmp_path):
     """Verify that --no-auto-map raises AlignmentMismatchError when counts differ."""
     epub_path = Path("my_books/Horus Rising: The Horus Heresy.epub")
     audio_path = Path("my_books/Horus Rising: The Horus Heresy.m4b")
@@ -403,8 +405,9 @@ def test_cli_build_no_auto_map_raises_mismatch(capsys):
         "build",
         "--epub", str(epub_path),
         "--audio", str(audio_path),
-        "--output", "dummy.epub",
+        "--output", str(tmp_path / "dummy.epub"),
         "--dry-run",
         "--no-auto-map",
+        "--work-dir", str(tmp_path / "work"),
     ])
     assert exit_code == 1
