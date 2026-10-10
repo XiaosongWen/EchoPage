@@ -5,12 +5,14 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 import zipfile
 from pathlib import Path
 from typing import Any, Sequence, Union
 
 from lxml import etree
-import nltk
+
+from echopage.logger import format_duration
 
 log = logging.getLogger("echopage.parser")
 
@@ -282,15 +284,26 @@ def _collect_direct_block_text(elem: etree._Element) -> str:
     return "".join(parts)
 
 
+_CACHED_TOKENIZER = False  # Sentinel: False means not initialized, None means failed
+
 def _get_tokenizer():
     """Obtain NLTK Punkt tokenizer with public resource loader without runtime downloads."""
+    global _CACHED_TOKENIZER
+    if _CACHED_TOKENIZER is not False:
+        return _CACHED_TOKENIZER
+
     try:
-        return nltk.data.load("tokenizers/punkt/english.pickle")
-    except (LookupError, OSError):
+        import nltk.data
+        _CACHED_TOKENIZER = nltk.data.load("tokenizers/punkt/english.pickle")
+        return _CACHED_TOKENIZER
+    except (LookupError, OSError, ImportError):
         try:
-            return nltk.tokenize.PunktSentenceTokenizer()
+            import nltk.tokenize
+            _CACHED_TOKENIZER = nltk.tokenize.PunktSentenceTokenizer()
+            return _CACHED_TOKENIZER
         except Exception as exc:
             log.warning("Could not load Punkt tokenizer (%s); using fallback tokenizer", exc)
+            _CACHED_TOKENIZER = None
             return None
 
 
@@ -613,6 +626,9 @@ def parse_epub(
     if work_dir is None:
         work_dir = epub_path.parent / f".echopage_unpack_{epub_path.stem}"
 
+    log.info("Parsing EPUB '%s'...", epub_path.name)
+    t_parse = time.perf_counter()
+
     unpacked_dir = unpack(epub_path, work_dir)
     spine = read_package(unpacked_dir)
     toc_map, guide_map = extract_navigation_metadata(unpacked_dir)
@@ -641,6 +657,17 @@ def parse_epub(
             "guide_type": guide_type,
             "sentences": sentences,
         })
+
+    parse_elapsed = time.perf_counter() - t_parse
+    total_sentences = sentence_counter - 1
+    log.info(
+        "Parsed EPUB '%s': %d spine items, %d chapters, %d sentences (took %s)",
+        epub_path.name,
+        len(spine),
+        len(chapters),
+        total_sentences,
+        format_duration(parse_elapsed),
+    )
 
     return {
         "work_dir": unpacked_dir,

@@ -6,9 +6,12 @@ import json
 import logging
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence, Union
+
+from echopage.logger import format_duration
 
 log = logging.getLogger("echopage.audio")
 
@@ -245,6 +248,10 @@ def split_audio(
 
     ext = in_path.suffix.lower() if in_path.suffix else ".m4b"
     units: list[AudioUnit] = []
+    total_chapters = len(chapter_list)
+
+    log.info("Splitting audio '%s' into %d chapters...", in_path.name, total_chapters)
+    t_start = time.perf_counter()
 
     for i, ch in enumerate(chapter_list):
         if isinstance(ch, dict):
@@ -263,7 +270,15 @@ def split_audio(
 
         # Caching: reuse existing split part if already generated
         if out_part_path.is_file() and out_part_path.stat().st_size > 0:
-            log.info("Using cached split part: %s", out_part_path)
+            log.info(
+                "[%d/%d] Using cached split part: %s ('%s', %s - %s)",
+                i + 1,
+                total_chapters,
+                out_part_path.name,
+                title,
+                format_duration(start_s),
+                format_duration(end_s),
+            )
             units.append(
                 AudioUnit(
                     path=out_part_path,
@@ -273,6 +288,17 @@ def split_audio(
                 )
             )
             continue
+
+        log.info(
+            "[%d/%d] Splitting chapter '%s' (%s to %s) -> %s...",
+            i + 1,
+            total_chapters,
+            title,
+            format_duration(start_s),
+            format_duration(end_s),
+            out_part_path.name,
+        )
+        t_ch = time.perf_counter()
 
         cmd = [
             ffmpeg_bin,
@@ -315,6 +341,16 @@ def split_audio(
                 f"FFmpeg split failed for chapter {i} ({out_part_path}):\n{stderr_msg}"
             )
 
+        ch_elapsed = time.perf_counter() - t_ch
+        log.info(
+            "[%d/%d] Finished chapter '%s' -> %s (took %s)",
+            i + 1,
+            total_chapters,
+            title,
+            out_part_path.name,
+            format_duration(ch_elapsed),
+        )
+
         units.append(
             AudioUnit(
                 path=out_part_path,
@@ -324,6 +360,12 @@ def split_audio(
             )
         )
 
+    total_elapsed = time.perf_counter() - t_start
+    log.info(
+        "Audio splitting completed: %d chapters ready (took %s)",
+        len(units),
+        format_duration(total_elapsed),
+    )
     return units
 
 
@@ -344,7 +386,7 @@ def to_wav16k(
 
     # Caching: skip conversion if valid WAV already exists
     if out_file.is_file() and out_file.stat().st_size > 0:
-        log.info("Using cached 16kHz WAV: %s", out_file)
+        log.info("Using cached 16kHz WAV: %s", out_file.name)
         return out_file
 
     ffmpeg_bin = shutil.which("ffmpeg")
@@ -363,7 +405,8 @@ def to_wav16k(
         str(out_file),
     ]
 
-    log.debug("Converting to 16kHz WAV: %s", " ".join(cmd))
+    log.info("Converting '%s' to 16kHz mono WAV -> %s...", in_path.name, out_file.name)
+    t_wav = time.perf_counter()
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
     if proc.returncode != 0:
@@ -374,27 +417,51 @@ def to_wav16k(
             f"FFmpeg conversion to 16kHz WAV failed for {in_path}:\n{stderr_msg}"
         )
 
+    wav_elapsed = time.perf_counter() - t_wav
+    log.info("Converted '%s' to 16kHz WAV (took %s)", in_path.name, format_duration(wav_elapsed))
     return out_file
 
 
 def prepare_audio_units(
     audio: Union[str, Path, Sequence[Union[str, Path]]],
     work_dir: str | Path | None = None,
+    split: bool = True,
 ) -> list[AudioUnit]:
     """High-level pipeline utility to probe and split audio files into AudioUnits.
 
     Handles single-file audiobooks with multiple chapters, single-chapter files,
-    or multi-file audiobooks.
+    or multi-file audiobooks. If ``split=False``, metadata is inspected without
+    invoking physical FFmpeg cutting (useful for instant --dry-run previews).
     """
     audio_paths = [Path(p) for p in audio] if isinstance(audio, (list, tuple)) else [Path(audio)]
     all_units: list[AudioUnit] = []
 
     for path in audio_paths:
+        t_probe = time.perf_counter()
         chapters = [c for c in probe_chapters(path) if c.end_s > c.start_s]
+        probe_elapsed = time.perf_counter() - t_probe
+        log.debug("Probed chapters for %s in %s", path.name, format_duration(probe_elapsed))
+
         if len(chapters) > 1:
-            split_dir = Path(work_dir) / path.stem if work_dir else path.parent / f"{path.stem}_parts"
-            units = split_audio(path, chapters, split_dir)
-            all_units.extend(units)
+            if not split:
+                log.info(
+                    "Inspected %d audio chapters from '%s' for mapping preview without physical split",
+                    len(chapters),
+                    path.name,
+                )
+                for ch in chapters:
+                    all_units.append(
+                        AudioUnit(
+                            path=path,
+                            start_s=ch.start_s,
+                            end_s=ch.end_s,
+                            title=ch.title,
+                        )
+                    )
+            else:
+                split_dir = Path(work_dir) / path.stem if work_dir else path.parent / f"{path.stem}_parts"
+                units = split_audio(path, chapters, split_dir)
+                all_units.extend(units)
         elif len(chapters) == 1:
             ch = chapters[0]
             all_units.append(
@@ -417,3 +484,4 @@ def prepare_audio_units(
             )
 
     return all_units
+

@@ -7,8 +7,11 @@ import logging
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Sequence, Union
+
+from echopage.logger import format_duration
 
 log = logging.getLogger("echopage.decryptor")
 
@@ -173,6 +176,7 @@ def decrypt_file(
 
     # DRM-free formats are returned untouched; no new files are created
     if fmt in (FORMAT_M4B, FORMAT_MP3):
+        log.info("Audio file '%s' is already DRM-free (%s); skipping decryption", in_path.name, fmt)
         return in_path
 
     # Unify parameter aliases
@@ -202,7 +206,7 @@ def decrypt_file(
 
     # Cache hit: skip work if output already exists in work dir
     if out_path.is_file():
-        log.info("Using cached decrypted file: %s", out_path)
+        log.info("Using cached decrypted file: %s", out_path.name)
         return out_path
 
     temp_out_path = effective_out_dir / f"{in_path.stem}.tmp.m4b"
@@ -237,7 +241,8 @@ def decrypt_file(
             str(temp_out_path),
         ]
 
-    log.info("Decrypting %s -> %s via ffmpeg", in_path, out_path)
+    log.info("Decrypting %s Audible file '%s' -> %s...", fmt, in_path.name, out_path.name)
+    t_dec = time.perf_counter()
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if proc.returncode != 0:
         if temp_out_path.exists():
@@ -256,6 +261,8 @@ def decrypt_file(
         # Fallback for mocked subprocess environments
         out_path.touch()
 
+    dec_elapsed = time.perf_counter() - t_dec
+    log.info("Decrypted '%s' -> %s (took %s)", in_path.name, out_path.name, format_duration(dec_elapsed))
     return out_path
 
 

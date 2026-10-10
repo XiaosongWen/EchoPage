@@ -6,8 +6,9 @@ import sys
 from pathlib import Path
 
 from echopage import aligner, audio, decryptor, packager, parser as epub_parser
+from echopage.logger import format_duration, setup_logging, timed_step
 
-log = logging.getLogger("echopage")
+log = logging.getLogger("echopage.cli")
 
 
 def build_parser():
@@ -156,20 +157,22 @@ _PHASE_HINTS: dict[str, str] = {
 
 
 def _phase(name, fn, *a, **kw):
-    log.info("%s: start", name)
-    try:
-        result = fn(*a, **kw)
-        log.info("%s: done", name)
-        return result
-    except Exception as exc:
-        log.error("Build failed in phase '%s': %s", name, exc)
-        hint = _PHASE_HINTS.get(name)
-        if hint:
-            log.info("Fix hint (%s): %s", name, hint)
-        raise
+    with timed_step(log, f"Phase '{name}'"):
+        log.info("%s: start", name)
+        try:
+            result = fn(*a, **kw)
+            log.info("%s: done", name)
+            return result
+        except Exception as exc:
+            log.error("Build failed in phase '%s': %s", name, exc)
+            hint = _PHASE_HINTS.get(name)
+            if hint:
+                log.info("Fix hint (%s): %s", name, hint)
+            raise
 
 
 def run_build(args):
+    is_default_work_dir = not bool(args.work_dir)
     work_dir = Path(args.work_dir) if args.work_dir else Path(f".echopage_build_{Path(args.epub).stem}")
     work_dir.mkdir(parents=True, exist_ok=True)
     epub_dir = work_dir / "epub"
@@ -205,7 +208,7 @@ def run_build(args):
             skip_set = set(skip_spine_list)
             chapters = [c for c in chapters if c.get("id") not in skip_set]
         chapters = [c for c in chapters if c.get("sentences")]
-        audio_units = aligner.prepare_audio_units(audio_files, work_dir=work_dir)
+        audio_units = aligner.prepare_audio_units(audio_files, work_dir=work_dir, split=False)
 
         use_automap = auto_map_enabled and (skip_spine_list is None or len(chapters) != len(audio_units))
         pairs, skipped = aligner.map_audio_units_to_chapters(
@@ -233,6 +236,11 @@ def run_build(args):
             print(f"\nModel selection: auto -> '{detected_model}'")
         else:
             print(f"\nModel selection: '{model_setting}'")
+
+        # In dry run, clean up temporary workspace if not --keep-temp and work_dir was auto-generated
+        if not getattr(args, "keep_temp", False) and is_default_work_dir:
+            shutil.rmtree(work_dir, ignore_errors=True)
+            log.debug("Cleaned up temporary dry-run work directory: %s", work_dir)
         return
 
     alignment_json = work_dir / "alignment.json"
@@ -274,19 +282,21 @@ def run_build(args):
         work_dir=epub_dir,
     )
 
+    # Clean up temporary build artifacts upon successful completion unless --keep-temp is set
+    if not getattr(args, "keep_temp", False):
+        if is_default_work_dir:
+            shutil.rmtree(work_dir, ignore_errors=True)
+            log.info("Cleaned up temporary build workspace: %s", work_dir)
+        else:
+            if epub_dir.is_dir():
+                shutil.rmtree(epub_dir, ignore_errors=True)
+                log.debug("Cleaned up temporary unpacked EPUB directory: %s", epub_dir)
+
 
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(message)s", stream=sys.stdout, force=True,
-    )
-    if args.verbose:
-        # Suppress noisy internal library debug logs (keep urllib3 visible for network/telemetry tracking)
-        logging.getLogger("torio").setLevel(logging.WARNING)
-        logging.getLogger("matplotlib").setLevel(logging.WARNING)
-        logging.getLogger("numba").setLevel(logging.WARNING)
+    setup_logging(verbose=args.verbose)
     validate(args, parser)
     try:
         if args.command == "build":

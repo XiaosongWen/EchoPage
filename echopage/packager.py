@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import zipfile
 from collections import defaultdict
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from typing import Any, Iterable, Sequence, Union
 from lxml import etree
 
 from echopage.alignment import AlignedChapter, TimelineEntry, load_alignment
+from echopage.logger import format_duration
 from echopage.parser import BLOCK_TAGS, PackageItem, read_package
 
 log = logging.getLogger("echopage.packager")
@@ -1684,30 +1686,45 @@ def package(
         If packaging or validation fails.
     """
     output_path = Path(output)
+    t_pack = time.perf_counter()
+    log.info("Packaging EPUB into '%s'...", output_path.name)
+
+    def _assemble(target: Path):
+        t0 = time.perf_counter()
+        inject_alignment_spans(target, alignment)
+        log.info("Injected span IDs into XHTML (took %s)", format_duration(time.perf_counter() - t0))
+
+        t0 = time.perf_counter()
+        smil_results = generate_smil_playlists(target, alignment, audio_source=audio)
+        log.info("Generated SMIL 3.0 playlists and copied audio (took %s)", format_duration(time.perf_counter() - t0))
+
+        t0 = time.perf_counter()
+        update_opf_manifest(target, smil_metadata=smil_results, audio_files=audio)
+        log.info("Updated OPF manifest with Media Overlays (took %s)", format_duration(time.perf_counter() - t0))
+
+        t0 = time.perf_counter()
+        zip_epub(target, output_path)
+        log.info("Zipped EPUB archive -> %s (took %s)", output_path.name, format_duration(time.perf_counter() - t0))
 
     if work_dir is not None:
         target_dir = Path(work_dir)
         if not target_dir.is_dir():
             from echopage import parser as epub_parser
             epub_parser.unpack(epub, target_dir)
-
-        inject_alignment_spans(target_dir, alignment)
-        smil_results = generate_smil_playlists(target_dir, alignment, audio_source=audio)
-        update_opf_manifest(target_dir, smil_metadata=smil_results, audio_files=audio)
-        zip_epub(target_dir, output_path)
+        _assemble(target_dir)
     else:
         with tempfile.TemporaryDirectory(prefix="echopage_pack_") as tmp_dir:
             temp_target = Path(tmp_dir)
             from echopage import parser as epub_parser
             epub_parser.unpack(epub, temp_target)
-            inject_alignment_spans(temp_target, alignment)
-            smil_results = generate_smil_playlists(temp_target, alignment, audio_source=audio)
-            update_opf_manifest(temp_target, smil_metadata=smil_results, audio_files=audio)
-            zip_epub(temp_target, output_path)
+            _assemble(temp_target)
 
     if validate_epub:
+        t0 = time.perf_counter()
         is_valid, report = validate_epubcheck(output_path)
+        log.info("EPUBCheck validation completed in %s (valid=%s)", format_duration(time.perf_counter() - t0), is_valid)
         if not is_valid:
             raise EpubCheckValidationError(f"EPUBCheck validation failed for {output_path}:\n{report}")
 
+    log.info("Finished packaging EPUB '%s' (total time: %s)", output_path.name, format_duration(time.perf_counter() - t_pack))
     return output_path

@@ -254,4 +254,58 @@ def test_cli_verbose_logger_filtering(tmp_path):
     assert logging.getLogger("urllib3").level != logging.WARNING
 
 
+def test_cli_build_dry_run_split_false(monkeypatch, capsys, tmp_path):
+    """Verify that --dry-run never invokes physical split_audio (split=False)."""
+    epub = Path(__file__).parent / "fixtures" / "book.epub"
+    audio = Path(__file__).parent / "fixtures" / "book.m4b"
+    out_file = tmp_path / "out.epub"
+
+    def fail_on_split(*a, **kw):
+        raise AssertionError("split_audio should NOT be called during --dry-run!")
+
+    monkeypatch.setattr("echopage.audio.split_audio", fail_on_split)
+
+    code = main(["build", "--epub", str(epub), "--audio", str(audio), "--output", str(out_file), "--dry-run", "--work-dir", str(tmp_path / "work")])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Dry run: planned chapter-to-audio mapping:" in out
+
+
+def test_cli_build_default_work_dir_lifecycle(monkeypatch, tmp_path):
+    """Verify default .echopage_build_<stem> is purged on successful build and kept with --keep-temp."""
+    from echopage.alignment import load_alignment
+
+    fixtures_dir = Path(__file__).parent / "fixtures"
+    epub = fixtures_dir / "book.epub"
+    audio_parts = sorted((fixtures_dir / "book_parts").glob("*.m4b"))
+
+    sample_alignment = load_alignment(fixtures_dir / "alignment.sample.json")
+    monkeypatch.setattr("echopage.aligner.align", lambda *a, **kw: sample_alignment)
+
+    # Change directory to tmp_path so default .echopage_build_book is created inside tmp_path
+    monkeypatch.chdir(tmp_path)
+    default_work_dir = tmp_path / ".echopage_build_book"
+
+    # 1. Successful build without --keep-temp cleans up default work_dir
+    out_epub = tmp_path / "narrated.epub"
+    code = main(["build", "--epub", str(epub), "--audio", *[str(p) for p in audio_parts], "--output", str(out_epub)])
+    assert code == 0
+    assert out_epub.is_file()
+    assert not default_work_dir.exists(), "Default work_dir should be deleted after build completion"
+
+    # 2. Build with --keep-temp preserves default work_dir
+    out_epub2 = tmp_path / "narrated2.epub"
+    code = main(["build", "--epub", str(epub), "--audio", *[str(p) for p in audio_parts], "--output", str(out_epub2), "--keep-temp"])
+    assert code == 0
+    assert out_epub2.is_file()
+    assert default_work_dir.is_dir(), "Default work_dir should be preserved when --keep-temp is set"
+
+    # 3. Dry-run without --keep-temp cleans up default work_dir
+    shutil.rmtree(default_work_dir, ignore_errors=True)
+    code = main(["build", "--epub", str(epub), "--audio", str(fixtures_dir / "book.m4b"), "--output", str(out_epub), "--dry-run"])
+    assert code == 0
+    assert not default_work_dir.exists(), "Default work_dir should be deleted after dry-run completion"
+
+
+
 

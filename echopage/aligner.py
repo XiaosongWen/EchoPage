@@ -6,8 +6,11 @@ import difflib
 import logging
 import re
 import shutil
+import time
 from pathlib import Path
 from typing import Any, Sequence, Union
+
+from echopage.logger import format_duration
 
 from echopage.alignment import (
     AlignedChapter,
@@ -517,28 +520,44 @@ def transcribe_and_align_audio(
 
     # Load Whisper model if not passed
     if whisper_model is None:
-        log.info("Loading Whisper model '%s' (device=%s, compute_type=%s)", model_size, device, compute_type)
+        log.info("Loading Whisper model '%s' (device=%s, compute_type=%s)...", model_size, device, compute_type)
+        t_model = time.perf_counter()
         whisper_model = whisperx.load_model(
             model_size,
             device,
             compute_type=compute_type,
             language=language,
         )
+        model_elapsed = time.perf_counter() - t_model
+        log.info("Whisper model '%s' loaded (took %s)", model_size, format_duration(model_elapsed))
 
-    log.info("Transcribing audio (%s, duration: %.2fs)", audio_file.name, audio_duration)
+    log.info("Transcribing audio (%s, duration: %s)...", audio_file.name, format_duration(audio_duration))
+    t_transcribe = time.perf_counter()
     result = whisper_model.transcribe(audio, batch_size=batch_size)
+    transcribe_elapsed = time.perf_counter() - t_transcribe
+    speed_factor = (audio_duration / transcribe_elapsed) if transcribe_elapsed > 0 else 0.0
+    log.info(
+        "Transcribed audio '%s' in %s (%.1fx real-time)",
+        audio_file.name,
+        format_duration(transcribe_elapsed),
+        speed_factor,
+    )
     segments = result.get("segments", [])
 
     # Load wav2vec2 alignment model if not passed
     detected_lang = result.get("language", language)
     if align_model is None or align_metadata is None:
-        log.info("Loading alignment model for language '%s' (device=%s)", detected_lang, align_device)
+        log.info("Loading alignment model for language '%s' (device=%s)...", detected_lang, align_device)
+        t_align_load = time.perf_counter()
         align_model, align_metadata = whisperx.load_align_model(
             language_code=detected_lang,
             device=align_device,
         )
+        align_load_elapsed = time.perf_counter() - t_align_load
+        log.info("Loaded alignment model for '%s' (took %s)", detected_lang, format_duration(align_load_elapsed))
 
-    log.info("Aligning words to audio with wav2vec2")
+    log.info("Aligning words to audio with wav2vec2...")
+    t_align_words = time.perf_counter()
     aligned_result = whisperx.align(
         segments,
         align_model,
@@ -559,6 +578,9 @@ def transcribe_and_align_audio(
                     "score": w.get("score"),
                 })
             )
+
+    align_words_elapsed = time.perf_counter() - t_align_words
+    log.info("Aligned %d words to audio (took %s)", len(heard_words), format_duration(align_words_elapsed))
 
     return heard_words, audio_duration, whisper_model, align_model, align_metadata
 
@@ -656,14 +678,26 @@ def align(
     whisper_model = None
     align_model = None
     align_metadata = None
+    total_pairs = len(mapped_pairs)
+
+    log.info("Starting forced alignment for %d chapter pairs...", total_pairs)
+    t_align_total = time.perf_counter()
 
     for pair_idx, (chapter, audio_unit) in enumerate(mapped_pairs):
+        t_ch = time.perf_counter()
         sentences = chapter.get("sentences", [])
         ch_id = chapter.get("id", f"chapter_{pair_idx + 1}")
         xhtml_name = Path(chapter.get("href", chapter.get("file_path", f"{ch_id}.xhtml"))).name
         audio_name = Path(audio_unit.path).name
 
-        log.info("Aligning chapter '%s' (%d sentences) with audio unit '%s'", ch_id, len(sentences), audio_name)
+        log.info(
+            "[%d/%d] Aligning chapter '%s' (%d sentences) with audio unit '%s'...",
+            pair_idx + 1,
+            total_pairs,
+            ch_id,
+            len(sentences),
+            audio_name,
+        )
 
         if precomputed_heard_words is not None and pair_idx < len(precomputed_heard_words):
             heard_words = precomputed_heard_words[pair_idx]
@@ -702,4 +736,19 @@ def align(
             })
         )
 
+        ch_elapsed = time.perf_counter() - t_ch
+        log.info(
+            "[%d/%d] Finished aligning chapter '%s' (took %s)",
+            pair_idx + 1,
+            total_pairs,
+            ch_id,
+            format_duration(ch_elapsed),
+        )
+
+    total_align_elapsed = time.perf_counter() - t_align_total
+    log.info(
+        "Completed forced alignment for %d chapters (total time: %s)",
+        len(aligned_chapters),
+        format_duration(total_align_elapsed),
+    )
     return aligned_chapters
