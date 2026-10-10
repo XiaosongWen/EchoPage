@@ -259,15 +259,36 @@ def _is_ancestor_skipped(elem: etree._Element) -> bool:
     return False
 
 
+def _collect_direct_block_text(elem: etree._Element) -> str:
+    """Collect text from elem and its inline children, stopping at any child block elements."""
+    parts = []
+    if elem.text:
+        parts.append(elem.text)
+    for child in elem:
+        if not isinstance(child.tag, str):
+            if child.tail:
+                parts.append(child.tail)
+            continue
+        child_tag = etree.QName(child).localname.lower()
+        if child_tag in BLOCK_TAGS:
+            # Child is a block element: do not recurse into it, only include its tail text
+            if child.tail:
+                parts.append(child.tail)
+        else:
+            # Inline element (<em>, <a>, <span>, etc.): recursively collect its text and tail
+            parts.append(_collect_direct_block_text(child))
+            if child.tail:
+                parts.append(child.tail)
+    return "".join(parts)
+
+
 def _get_tokenizer():
-    """Obtain NLTK Punkt tokenizer with automatic download/fallback."""
+    """Obtain NLTK Punkt tokenizer with public resource loader without runtime downloads."""
     try:
-        return nltk.tokenize._get_punkt_tokenizer("english")
-    except (LookupError, AttributeError):
+        return nltk.data.load("tokenizers/punkt/english.pickle")
+    except (LookupError, OSError):
         try:
-            nltk.download("punkt_tab", quiet=True)
-            nltk.download("punkt", quiet=True)
-            return nltk.tokenize._get_punkt_tokenizer("english")
+            return nltk.tokenize.PunktSentenceTokenizer()
         except Exception as exc:
             log.warning("Could not load Punkt tokenizer (%s); using fallback tokenizer", exc)
             return None
@@ -341,20 +362,11 @@ def extract_sentences(
 
         # Check if elem is a candidate block tag
         if tag in BLOCK_TAGS:
-            # Check if elem has any descendant block tags
-            has_child_block = any(
-                isinstance(child.tag, str)
-                and etree.QName(child).localname.lower() in BLOCK_TAGS
-                for child in elem.iterdescendants()
-            )
-            if has_child_block:
-                # Let descendant leaf blocks handle sentence extraction
-                continue
-
-            # This is a leaf content block: concatenate all text including inline tags (<em>, <a>, <span>, etc.)
-            block_text = "".join(elem.itertext())
+            # Collect text belonging directly to this block (and inline children),
+            # without descending into child block tags which are processed separately.
+            block_text = _collect_direct_block_text(elem)
             if not block_text.strip():
-                # Skip empty blocks or whitespace-only blocks
+                # Skip empty blocks or whitespace-only container blocks
                 continue
 
             # Deterministic, unique xpath via lxml getpath (works without namespace map overhead)

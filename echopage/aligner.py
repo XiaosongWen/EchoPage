@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any, Sequence, Union
 
 from echopage.alignment import (
-    ALIGNMENT_SCHEMA,
     AlignedChapter,
     AlignmentError,
     AlignmentValidationError,
@@ -263,6 +262,11 @@ def align_sentence_words(
         if end_ms <= start_ms:
             end_ms = start_ms + min_ms
 
+        # never point past the end of the audio (SMIL would reference beyond EOF)
+        duration_ms = int(round(audio_duration * 1000))
+        if duration_ms > start_ms and end_ms > duration_ms:
+            end_ms = duration_ms
+
         prev_end_ms = end_ms
 
         entry = TimelineEntry({
@@ -421,6 +425,9 @@ def transcribe_and_align_audio(
     # Auto-detect device and compute type
     if device is None or device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
+    elif device == "mps":
+        log.warning("device 'mps' is unsupported by ctranslate2 (and slower for alignment); using cpu")
+        device = "cpu"
 
     align_device = device
     if compute_type is None:
@@ -488,6 +495,7 @@ def align(
     work_dir: Union[str, Path, None] = None,
     manual_mapping: dict[int, int] | None = None,
     precomputed_heard_words: Sequence[Sequence[Union[dict, HeardWord]]] | None = None,
+    skip_spine: Sequence[str] | None = None,
 ) -> list[AlignedChapter]:
     """High-level pipeline: Match EPUB sentences to audio narration.
 
@@ -511,6 +519,8 @@ def align(
         Explicit chapter-to-audio index mapping.
     precomputed_heard_words : Sequence[Sequence[Union[dict, HeardWord]]], optional
         Optional precomputed heard words per audio unit (for testing and offline runs).
+    skip_spine : Sequence[str], optional
+        Optional list of spine item IDs to exclude from alignment.
 
     Returns
     -------
@@ -530,6 +540,12 @@ def align(
         raise TypeError(f"Invalid book argument: expected path or parsed epub dict, got {type(book)}")
 
     chapters = epub_data.get("chapters", [])
+    if skip_spine:
+        skip_set = {s.strip() for s in skip_spine if s.strip()}
+        chapters = [c for c in chapters if c.get("id") not in skip_set]
+    if manual_mapping is None:
+        # cover/title/copyright pages have no sentences and no narration
+        chapters = [c for c in chapters if c.get("sentences")]
     if not chapters:
         log.warning("EPUB has no spine chapters to align.")
         return []
@@ -565,7 +581,8 @@ def align(
             wav_path = audio_unit.path
             if wav_path.suffix.lower() != ".wav":
                 temp_wav_dir = Path(work_dir) / "wav16k" if work_dir else wav_path.parent / "wav16k"
-                wav_path = to_wav16k(audio_unit.path, temp_wav_dir / f"{wav_path.stem}_16k.wav")
+                # parent dir name = source stem, so part_0 of two books never collide
+                wav_path = to_wav16k(audio_unit.path, temp_wav_dir / f"{wav_path.parent.name}_{wav_path.stem}_16k.wav")
 
             heard_words, duration, whisper_model, align_model, align_metadata = transcribe_and_align_audio(
                 audio_path=wav_path,

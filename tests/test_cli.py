@@ -202,3 +202,38 @@ def test_cli_generate_smil_subcommand(tmp_path, capsys):
     assert "chapter01.smil" in out
     assert (work_dir / "EPUB" / "chapter01.smil").is_file()
 
+
+def test_cli_build_dry_run(capsys, tmp_path):
+    epub = Path(__file__).parent / "fixtures" / "book.epub"
+    audio = Path(__file__).parent / "fixtures" / "book.m4b"
+    out_file = tmp_path / "out.epub"
+
+    code = main(["build", "--epub", str(epub), "--audio", str(audio), "--output", str(out_file), "--dry-run"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Dry run: planned chapter-to-audio mapping:" in out
+    assert "chapter01" in out
+    assert "chapter02" in out
+    assert not out_file.exists()
+
+
+def test_cli_build_skip_spine(capsys, tmp_path):
+    epub = Path(__file__).parent / "fixtures" / "book.epub"
+    audio = Path(__file__).parent / "fixtures" / "chapter02.mp3"
+    out_file = tmp_path / "out.epub"
+
+    code = main([
+        "build",
+        "--epub", str(epub),
+        "--audio", str(audio),
+        "--output", str(out_file),
+        "--skip-spine", "chapter01",
+        "--dry-run",
+    ])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Dry run: planned chapter-to-audio mapping:" in out
+    assert "chapter02" in out
+    assert "chapter01" not in out
+
+

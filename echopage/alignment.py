@@ -456,23 +456,23 @@ def validate_alignment(
                     f"expected string, got {type(text).__name__}."
                 )
 
-            # 3. Timestamp numeric & non-negative validation
+            # 3. Timestamp integer & non-negative validation
             start_raw = entry.get("start_ms")
             end_raw = entry.get("end_ms")
 
-            if start_raw is None or not isinstance(start_raw, (int, float)) or isinstance(start_raw, bool):
+            if start_raw is None or not isinstance(start_raw, int) or isinstance(start_raw, bool):
                 raise AlignmentValidationError(
                     f"Timeline entry '{element_id}' in chapter '{spine_id}' has invalid 'start_ms': "
                     f"expected integer, got {repr(start_raw)}."
                 )
-            if end_raw is None or not isinstance(end_raw, (int, float)) or isinstance(end_raw, bool):
+            if end_raw is None or not isinstance(end_raw, int) or isinstance(end_raw, bool):
                 raise AlignmentValidationError(
                     f"Timeline entry '{element_id}' in chapter '{spine_id}' has invalid 'end_ms': "
                     f"expected integer, got {repr(end_raw)}."
                 )
 
-            start_ms = int(start_raw)
-            end_ms = int(end_raw)
+            start_ms = start_raw
+            end_ms = end_raw
 
             if start_ms < 0 or end_ms < 0:
                 raise AlignmentValidationError(

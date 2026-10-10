@@ -11,8 +11,8 @@ EPUB readers are strict about the zip layout. The `mimetype` file must be the fi
 5. Report EPUBCheck errors in the CLI output. Exit non-zero on errors.
 
 ## Acceptance Criteria
-- [ ] `unzip -v out.epub` shows `mimetype` first, with method `Stored`.
-- [ ] The `mimetype` content is exact.
-- [ ] EPUBCheck reports 0 errors on the fixture build.
-- [ ] A missing EPUBCheck gives a warning, not a crash.
-- [ ] Output contains no stray files (`.DS_Store`, temp files).
+- [x] `unzip -v out.epub` shows `mimetype` first, with method `Stored`.
+- [x] The `mimetype` content is exact.
+- [x] EPUBCheck reports 0 errors on the fixture build.
+- [x] A missing EPUBCheck gives a warning, not a crash.
+- [x] Output contains no stray files (`.DS_Store`, temp files).

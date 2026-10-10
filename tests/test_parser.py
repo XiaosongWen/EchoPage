@@ -470,3 +470,31 @@ def test_extract_sentences_missing_file_raises():
     """Verify FileNotFoundError is raised when xhtml file does not exist."""
     with pytest.raises(FileNotFoundError):
         extract_sentences("non_existent_file.xhtml")
+
+
+def test_extract_sentences_nested_blocks_preserves_parent_text():
+    """Verify that direct text in block elements containing child blocks is preserved."""
+    xhtml = """<html xmlns="http://www.w3.org/1999/xhtml">
+    <body>
+      <div>
+        Chapter 1 Introduction.
+        <p>First paragraph text.</p>
+        Concluding note.
+      </div>
+      <ul>
+        <li>Item header text.
+          <ul>
+            <li>Sub item text.</li>
+          </ul>
+        </li>
+      </ul>
+    </body>
+    </html>"""
+    sentences = extract_sentences(xhtml)
+    texts = [s.text for s in sentences]
+    assert "Chapter 1 Introduction." in texts
+    assert "Concluding note." in texts
+    assert "First paragraph text." in texts
+    assert "Item header text." in texts
+    assert "Sub item text." in texts
+

@@ -16,8 +16,8 @@ The OPF (`package.opf`) tells readers which files exist and which SMIL belongs t
 7. Add the active class to the book CSS, e.g. `.-epub-media-overlay-active { background: #ffe58a; }`.
 
 ## Acceptance Criteria
-- [ ] Every SMIL and audio file in the folder is in the manifest, and every manifest `href` exists.
-- [ ] Each overlaid XHTML item has `media-overlay` pointing at a valid SMIL ID.
-- [ ] Total duration equals the sum of the per-SMIL durations.
-- [ ] Duration formatting test: `3723456 ms` becomes `01:02:03.456`.
-- [ ] The original metadata (title, author, identifier) is unchanged.
+- [x] Every SMIL and audio file in the folder is in the manifest, and every manifest `href` exists.
+- [x] Each overlaid XHTML item has `media-overlay` pointing at a valid SMIL ID.
+- [x] Total duration equals the sum of the per-SMIL durations.
+- [x] Duration formatting test: `3723456 ms` becomes `01:02:03.456`.
+- [x] The original metadata (title, author, identifier) is unchanged.

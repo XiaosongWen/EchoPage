@@ -318,6 +318,30 @@ def test_validation_rejects_invalid_types():
     assert "invalid 'start_ms'" in str(exc.value)
 
 
+def test_validate_alignment_rejects_float_timestamps():
+    """Verify float timestamps are rejected to enforce schema integer conformance."""
+    bad_entry = {
+        "spine_item_id": "c1",
+        "xhtml_filename": "a.xhtml",
+        "audio_filename": "a.mp3",
+        "timeline": [{"element_id": "mo_s_0001", "text": "hi", "start_ms": 12.5, "end_ms": 100}],
+    }
+    with pytest.raises(AlignmentValidationError) as exc:
+        validate_alignment([bad_entry])
+    assert "invalid 'start_ms'" in str(exc.value)
+
+    bad_entry2 = {
+        "spine_item_id": "c1",
+        "xhtml_filename": "a.xhtml",
+        "audio_filename": "a.mp3",
+        "timeline": [{"element_id": "mo_s_0001", "text": "hi", "start_ms": 0, "end_ms": 100.0}],
+    }
+    with pytest.raises(AlignmentValidationError) as exc:
+        validate_alignment([bad_entry2])
+    assert "invalid 'end_ms'" in str(exc.value)
+
+
+
 # ---------------------------------------------------------------------------
 # 3. ID Scheme & Helper Tests (Task Item 4)
 # ---------------------------------------------------------------------------

@@ -404,3 +404,23 @@ def test_fixture_alignment_invariants_and_spot_checks():
     assert s9.element_id == "mo_s_0009"
     assert s9.start_ms <= 200
     assert 2000 <= s9.end_ms <= 2500
+
+
+def test_end_ms_clamped_to_audio_duration():
+    heard = [{"word": "Hello", "start": 0.0, "end": 0.5}, {"word": "world", "start": 0.6, "end": 5.0}]
+    tl = align_sentence_words(["Hello world"], heard, audio_duration=2.0)
+    assert tl[0].end_ms <= 2000
+
+
+def test_align_skips_chapters_without_sentences():
+    from echopage.aligner import align
+    from echopage.audio import AudioUnit
+    book = {"chapters": [
+        {"id": "cover", "href": "cover.xhtml", "sentences": []},
+        {"id": "c1", "href": "c1.xhtml", "sentences": [
+            {"element_id": "mo_s_0001", "text": "Hello world.", "block_xpath": "/p", "char_start": 0, "char_end": 12}]},
+    ]}
+    unit = AudioUnit("a.mp3", 0, 3, "c1")
+    heard = [[{"word": "Hello", "start": 0.0, "end": 0.5}, {"word": "world", "start": 0.6, "end": 1.0}]]
+    res = align(book, [unit], precomputed_heard_words=heard)
+    assert [c.spine_item_id for c in res] == ["c1"]

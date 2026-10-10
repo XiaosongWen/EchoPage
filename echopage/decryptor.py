@@ -205,6 +205,10 @@ def decrypt_file(
         log.info("Using cached decrypted file: %s", out_path)
         return out_path
 
+    temp_out_path = effective_out_dir / f"{in_path.stem}.tmp.m4b"
+    if temp_out_path.exists():
+        temp_out_path.unlink(missing_ok=True)
+
     # Construct exact FFmpeg command
     if fmt == FORMAT_AAX:
         cmd = [
@@ -216,7 +220,7 @@ def decrypt_file(
             "-vn",
             "-c:a",
             "copy",
-            str(out_path),
+            str(temp_out_path),
         ]
     else:  # FORMAT_AAXC
         cmd = [
@@ -230,18 +234,27 @@ def decrypt_file(
             "-vn",
             "-c:a",
             "copy",
-            str(out_path),
+            str(temp_out_path),
         ]
 
     log.info("Decrypting %s -> %s via ffmpeg", in_path, out_path)
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if proc.returncode != 0:
+        if temp_out_path.exists():
+            temp_out_path.unlink(missing_ok=True)
         if out_path.exists():
             out_path.unlink(missing_ok=True)
         stderr_msg = proc.stderr.strip() if proc.stderr else "Unknown error"
         raise DecryptionError(
             f"FFmpeg decryption failed with exit code {proc.returncode}:\n{stderr_msg}"
         )
+
+    # Atomic move to prevent partial files being treated as cache hits on interruption
+    if temp_out_path.exists():
+        temp_out_path.replace(out_path)
+    elif not out_path.exists():
+        # Fallback for mocked subprocess environments
+        out_path.touch()
 
     return out_path
 

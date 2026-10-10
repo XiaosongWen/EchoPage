@@ -390,12 +390,12 @@ def prepare_audio_units(
     all_units: list[AudioUnit] = []
 
     for path in audio_paths:
-        chapters = probe_chapters(path)
+        chapters = [c for c in probe_chapters(path) if c.end_s > c.start_s]
         if len(chapters) > 1:
             split_dir = Path(work_dir) / path.stem if work_dir else path.parent / f"{path.stem}_parts"
             units = split_audio(path, chapters, split_dir)
             all_units.extend(units)
-        else:
+        elif len(chapters) == 1:
             ch = chapters[0]
             all_units.append(
                 AudioUnit(
@@ -403,6 +403,16 @@ def prepare_audio_units(
                     start_s=ch.start_s,
                     end_s=ch.end_s,
                     title=ch.title,
+                )
+            )
+        else:
+            dur = probe_duration(path)
+            all_units.append(
+                AudioUnit(
+                    path=path,
+                    start_s=0.0,
+                    end_s=dur,
+                    title=path.stem,
                 )
             )
 

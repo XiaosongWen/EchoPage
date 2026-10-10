@@ -8,8 +8,8 @@
 5. Add `--dry-run`, which parses the EPUB and probes the audio and prints the planned chapter-to-audio mapping without aligning.
 
 ## Acceptance Criteria
-- [ ] A new user can follow the README from clone to first built EPUB.
-- [ ] The legal note is present.
-- [ ] A full-length book builds without running out of memory, and the time and RAM are noted in the docs.
-- [ ] `--skip-spine` and `--dry-run` work, with tests.
-- [ ] `pytest` passes and EPUBCheck passes on the final sample output.
+- [x] A new user can follow the README from clone to first built EPUB.
+- [x] The legal note is present.
+- [x] A full-length book builds without running out of memory, and the time and RAM are noted in the docs.
+- [x] `--skip-spine` and `--dry-run` work, with tests.
+- [x] `pytest` passes and EPUBCheck passes on the final sample output.

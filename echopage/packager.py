@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
+import subprocess
+import tempfile
+import zipfile
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,13 +17,26 @@ from typing import Any, Iterable, Sequence, Union
 from lxml import etree
 
 from echopage.alignment import AlignedChapter, TimelineEntry, load_alignment
-from echopage.parser import PackageItem, read_package
+from echopage.parser import BLOCK_TAGS, PackageItem, read_package
 
 log = logging.getLogger("echopage.packager")
 
 SMIL_NAMESPACE = "http://www.w3.org/ns/SMIL"
 EPUB_OPS_NAMESPACE = "http://www.idpf.org/2007/ops"
 XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml"
+OPF_NAMESPACE = "http://www.idpf.org/2007/opf"
+DC_NAMESPACE = "http://purl.org/dc/elements/1.1/"
+
+AUDIO_MIME_TYPES: dict[str, str] = {
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".m4b": "audio/mp4",
+    ".mp4": "audio/mp4",
+    ".aac": "audio/mp4",
+    ".ogg": "audio/ogg",
+    ".oga": "audio/ogg",
+    ".wav": "audio/wav",
+}
 
 
 class PackagerError(RuntimeError):
@@ -34,6 +51,14 @@ class IdCollisionError(PackagerError, ValueError):
 
 class SmilGenerationError(PackagerError, ValueError):
     """Raised when SMIL generation fails due to missing files, invalid IDs, or invalid timing."""
+
+
+class OpfUpdateError(PackagerError, ValueError):
+    """Raised when updating OPF package manifest fails."""
+
+
+class EpubCheckValidationError(PackagerError, ValueError):
+    """Raised when EPUBCheck validation reports errors."""
 
 
 def format_smil_clock(ms: Union[int, float]) -> str:
@@ -216,9 +241,14 @@ def collect_text_segments(elem: etree._Element) -> list[tuple[etree._Element, st
         segments.append((elem, "text", elem.text))
 
     for child in elem:
-        segments.extend(collect_text_segments(child))
-        if child.tail:
-            segments.append((child, "tail", child.tail))
+        if isinstance(child.tag, str) and etree.QName(child).localname.lower() in BLOCK_TAGS:
+            # Child is a block element: do not recurse into it. Only include its tail text.
+            if child.tail:
+                segments.append((child, "tail", child.tail))
+        else:
+            segments.extend(collect_text_segments(child))
+            if child.tail:
+                segments.append((child, "tail", child.tail))
 
     return segments
 
@@ -498,6 +528,10 @@ def inject_spans_into_xhtml(
         if not nodes:
             raise XhtmlInjectionError(
                 f"Block XPath '{xpath}' not found in document '{doc_name}'."
+            )
+        if len(nodes) > 1:
+            raise XhtmlInjectionError(
+                f"Block XPath '{xpath}' matched {len(nodes)} elements in '{doc_name}'; expected exactly 1."
             )
         block_nodes[xpath] = nodes[0]
 
@@ -996,17 +1030,633 @@ def generate_smil_playlists(
     return results
 
 
+def find_opf_path(work_dir: Union[str, Path]) -> Path:
+    """Locate the EPUB OPF package file.
+
+    Checks META-INF/container.xml rootfile full-path first, then searches work_dir for *.opf.
+
+    Parameters
+    ----------
+    work_dir : Union[str, Path]
+        Root directory of unpacked EPUB container.
+
+    Returns
+    -------
+    Path
+        Path to the OPF package document.
+
+    Raises
+    ------
+    OpfUpdateError
+        If no OPF package file can be located.
+    """
+    work_dir = Path(work_dir)
+    container_file = work_dir / "META-INF" / "container.xml"
+    if container_file.is_file():
+        try:
+            tree = etree.parse(str(container_file))
+            rootfiles = tree.xpath("//*[local-name()='rootfile'][@full-path]")
+            if rootfiles:
+                full_path = rootfiles[0].get("full-path")
+                candidate = work_dir / full_path
+                if candidate.is_file():
+                    return candidate
+        except Exception as exc:
+            log.debug("Failed reading container.xml in %s: %s", work_dir, exc)
+
+    opf_files = sorted(work_dir.rglob("*.opf"))
+    if opf_files:
+        return opf_files[0]
+
+    raise OpfUpdateError(f"Could not locate OPF package file in '{work_dir}'.")
+
+
+def inject_active_class_css(
+    work_dir: Union[str, Path],
+    css_class: str = "-epub-media-overlay-active",
+    color: str = "#ffe58a",
+) -> list[Path]:
+    """Inject media overlay active CSS style into stylesheets in work_dir.
+
+    Parameters
+    ----------
+    work_dir : Union[str, Path]
+        Root directory of unpacked EPUB container.
+    css_class : str, optional
+        Class name to style (default '-epub-media-overlay-active').
+    color : str, optional
+        Highlight background color (default '#ffe58a').
+
+    Returns
+    -------
+    list[Path]
+        List of modified or created CSS file paths.
+    """
+    work_dir = Path(work_dir)
+    content_dir = find_epub_content_dir(work_dir)
+    rule = f"\n.{css_class} {{\n  background-color: {color};\n}}\n"
+
+    css_files = list(content_dir.rglob("*.css"))
+    if not css_files:
+        css_files = list(work_dir.rglob("*.css"))
+
+    if not css_files:
+        default_css = content_dir / "styles.css"
+        default_css.write_text(rule.lstrip(), encoding="utf-8")
+        return [default_css]
+
+    modified: list[Path] = []
+    for css_file in css_files:
+        try:
+            text = css_file.read_text(encoding="utf-8")
+            if css_class not in text:
+                css_file.write_text(text.rstrip() + "\n" + rule, encoding="utf-8")
+            modified.append(css_file)
+        except Exception as exc:
+            log.warning("Could not update CSS file %s: %s", css_file, exc)
+
+    return modified
+
+
+def synthesize_nav_xhtml(
+    work_dir: Union[str, Path],
+    opf_path: Path,
+    spine_hrefs: Optional[Sequence[str]] = None,
+) -> Path:
+    """Synthesize a minimal EPUB 3 navigation document (nav.xhtml).
+
+    Parameters
+    ----------
+    work_dir : Union[str, Path]
+        Root directory of unpacked EPUB container.
+    opf_path : Path
+        Path to the package OPF document.
+    spine_hrefs : Sequence[str], optional
+        List of chapter XHTML relative paths for navigation links.
+
+    Returns
+    -------
+    Path
+        Path to the written nav.xhtml file.
+    """
+    opf_dir = opf_path.parent
+    nav_path = opf_dir / "nav.xhtml"
+
+    items_html = []
+    if spine_hrefs:
+        for href in spine_hrefs:
+            title = Path(href).stem.replace("_", " ").title()
+            items_html.append(f'        <li><a href="{href}">{title}</a></li>')
+    else:
+        items_html.append('        <li><a href="chapter01.xhtml">Chapter 1</a></li>')
+
+    content = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">\n'
+        '  <head>\n'
+        '    <title>Table of Contents</title>\n'
+        '  </head>\n'
+        '  <body>\n'
+        '    <nav epub:type="toc" id="toc">\n'
+        '      <h1>Table of Contents</h1>\n'
+        '      <ol>\n'
+        + "\n".join(items_html) + "\n"
+        '      </ol>\n'
+        '    </nav>\n'
+        '  </body>\n'
+        '</html>\n'
+    )
+    nav_path.write_text(content, encoding="utf-8")
+    return nav_path
+
+
+def update_opf_manifest(
+    work_dir: Union[str, Path],
+    smil_metadata: Optional[Union[dict[str, Any], Sequence[Any]]] = None,
+    audio_files: Optional[Sequence[Union[str, Path]]] = None,
+    active_class: str = "-epub-media-overlay-active",
+    highlight_color: str = "#ffe58a",
+    validate_hrefs: bool = True,
+) -> Path:
+    """Update OPF package manifest with Media Overlays SMIL and audio entries.
+
+    Ensures EPUB 3.0 specification compliance, registers all chapter SMIL
+    playlists with media-type="application/smil+xml", registers all audio assets,
+    links XHTML manifest items with media-overlay attributes, adds per-SMIL and
+    total media:duration metadata, adds media:active-class metadata, and injects
+    active class styling into stylesheet(s).
+
+    Parameters
+    ----------
+    work_dir : Union[str, Path]
+        Root directory of unpacked EPUB container.
+    smil_metadata : Union[dict[str, Any], Sequence[Any]], optional
+        Mapping or list of chapter SMIL metadata produced by generate_smil_playlists.
+        If None, discovers SMIL files present in the content directory.
+    audio_files : Sequence[Union[str, Path]], optional
+        Optional list of audio files to register.
+    active_class : str, optional
+        Active highlight class name (default '-epub-media-overlay-active').
+    highlight_color : str, optional
+        Highlight background color (default '#ffe58a').
+    validate_hrefs : bool, optional
+        Whether to verify that manifest hrefs point to existing files.
+
+    Returns
+    -------
+    Path
+        Path to updated package.opf file.
+
+    Raises
+    ------
+    OpfUpdateError
+        If OPF parsing, updating, or serialization fails.
+    """
+    work_dir = Path(work_dir)
+    opf_path = find_opf_path(work_dir)
+    opf_dir = opf_path.parent
+
+    try:
+        parser = etree.XMLParser(remove_blank_text=False)
+        tree = etree.parse(str(opf_path), parser)
+    except Exception as exc:
+        raise OpfUpdateError(f"Failed to parse OPF file {opf_path}: {exc}") from exc
+
+    root = tree.getroot()
+    ns = root.nsmap.get(None)
+
+    def qname(tag: str) -> str:
+        return f"{{{ns}}}{tag}" if ns else tag
+
+    # 1. Upgrade EPUB version to 3.0 if necessary
+    version = root.get("version", "")
+    if version != "3.0":
+        root.set("version", "3.0")
+
+    # 2. Locate container elements
+    metadata_elems = root.xpath("//*[local-name()='metadata']")
+    if not metadata_elems:
+        raise OpfUpdateError(f"OPF missing <metadata> element in {opf_path}")
+    metadata = metadata_elems[0]
+
+    manifest_elems = root.xpath("//*[local-name()='manifest']")
+    if not manifest_elems:
+        raise OpfUpdateError(f"OPF missing <manifest> element in {opf_path}")
+    manifest = manifest_elems[0]
+
+    spine_elems = root.xpath("//*[local-name()='spine']")
+    spine = spine_elems[0] if spine_elems else None
+
+    # 3. Verify or synthesize EPUB 3 Navigation Document (properties="nav")
+    manifest_items = manifest.xpath("./*[local-name()='item']")
+    has_nav = any("nav" in (item.get("properties") or "").split() for item in manifest_items)
+    if not has_nav:
+        spine_hrefs: list[str] = []
+        if spine is not None:
+            for itemref in spine.xpath("./*[local-name()='itemref']"):
+                idref = itemref.get("idref")
+                matching = manifest.xpath(f"./*[local-name()='item'][@id='{idref}']")
+                if matching:
+                    spine_hrefs.append(matching[0].get("href", ""))
+        nav_path = synthesize_nav_xhtml(work_dir, opf_path, [h for h in spine_hrefs if h])
+        nav_rel_href = os.path.relpath(nav_path, opf_dir).replace("\\", "/")
+
+        existing_nav_item = next(
+            (it for it in manifest.xpath("./*[local-name()='item']") if it.get("href") == nav_rel_href),
+            None,
+        )
+        if existing_nav_item is not None:
+            props = (existing_nav_item.get("properties") or "").split()
+            if "nav" not in props:
+                props.append("nav")
+                existing_nav_item.set("properties", " ".join(props))
+        else:
+            existing_ids = {it.get("id") for it in manifest.xpath("./*[local-name()='item']")}
+            nav_id = "nav" if "nav" not in existing_ids else "nav_doc"
+            etree.SubElement(
+                manifest,
+                qname("item"),
+                attrib={
+                    "id": nav_id,
+                    "href": nav_rel_href,
+                    "media-type": "application/xhtml+xml",
+                    "properties": "nav",
+                },
+            )
+
+    # 4. Normalize SMIL metadata entries
+    processed_smils: list[dict[str, Any]] = []
+
+    if smil_metadata is not None:
+        if isinstance(smil_metadata, dict):
+            items_list = list(smil_metadata.values())
+        else:
+            items_list = list(smil_metadata)
+
+        for item in items_list:
+            if hasattr(item, "smil_path"):
+                s_path = Path(item.smil_path)
+                ch_id = getattr(item, "chapter_id", s_path.stem)
+                dur_ms = getattr(item, "duration_ms", 0)
+                a_path = getattr(item, "audio_file_path", None)
+                x_path = getattr(item, "xhtml_path", None)
+            elif isinstance(item, dict):
+                s_path = Path(item["smil_path"])
+                ch_id = item.get("chapter_id", s_path.stem)
+                dur_ms = item.get("duration_ms", int(round(float(item.get("duration", 0)) * 1000)))
+                a_path = Path(item["audio_file_path"]) if item.get("audio_file_path") else None
+                x_path = Path(item["xhtml_path"]) if item.get("xhtml_path") else None
+            else:
+                continue
+
+            processed_smils.append({
+                "chapter_id": ch_id,
+                "smil_path": s_path,
+                "duration_ms": dur_ms,
+                "audio_path": a_path,
+                "xhtml_path": x_path,
+            })
+    else:
+        # Discover existing SMIL files on disk
+        smil_files = sorted(set(list(opf_dir.glob("*.smil")) + list((opf_dir / "smil").glob("*.smil"))))
+        for sf in smil_files:
+            try:
+                stree = etree.parse(str(sf))
+                sroot = stree.getroot()
+                audio_elems = sroot.xpath("//*[local-name()='audio'][@clipEnd]")
+                dur_ms = 0
+                if audio_elems:
+                    last_end = audio_elems[-1].get("clipEnd")
+                    dur_ms = int(round(parse_smil_clock(last_end) * 1000))
+
+                seq_elems = sroot.xpath("//*[local-name()='seq']")
+                textref = seq_elems[0].get(f"{{{EPUB_OPS_NAMESPACE}}}textref") if seq_elems else None
+                if not textref:
+                    text_elems = sroot.xpath("//*[local-name()='text'][@src]")
+                    if text_elems:
+                        textref = text_elems[0].get("src").split("#")[0]
+
+                xhtml_p = (sf.parent / textref).resolve() if textref else None
+
+                processed_smils.append({
+                    "chapter_id": sf.stem,
+                    "smil_path": sf,
+                    "duration_ms": dur_ms,
+                    "audio_path": None,
+                    "xhtml_path": xhtml_p,
+                })
+            except Exception as exc:
+                log.warning("Could not inspect SMIL file %s: %s", sf, exc)
+
+    # 5. Register SMIL items and update matching XHTML items in manifest
+    existing_items = manifest.xpath("./*[local-name()='item']")
+    existing_ids: dict[str, Any] = {it.get("id"): it for it in existing_items}
+    existing_hrefs: dict[str, Any] = {it.get("href"): it for it in existing_items}
+
+    for entry in processed_smils:
+        s_path = entry["smil_path"]
+        ch_id = entry["chapter_id"]
+        smil_rel_href = os.path.relpath(s_path, opf_dir).replace("\\", "/")
+
+        if smil_rel_href in existing_hrefs:
+            smil_item = existing_hrefs[smil_rel_href]
+            smil_id = smil_item.get("id")
+            smil_item.set("media-type", "application/smil+xml")
+        else:
+            base_smil_id = f"smil_{ch_id}"
+            smil_id = base_smil_id
+            counter = 1
+            while smil_id in existing_ids:
+                smil_id = f"{base_smil_id}_{counter}"
+                counter += 1
+
+            smil_item = etree.SubElement(
+                manifest,
+                qname("item"),
+                attrib={
+                    "id": smil_id,
+                    "href": smil_rel_href,
+                    "media-type": "application/smil+xml",
+                },
+            )
+            existing_ids[smil_id] = smil_item
+            existing_hrefs[smil_rel_href] = smil_item
+
+        entry["smil_id"] = smil_id
+
+        # Match XHTML item
+        xhtml_item = None
+        if ch_id in existing_ids:
+            cand = existing_ids[ch_id]
+            if "xhtml" in (cand.get("media-type") or "") or cand.get("href", "").endswith((".xhtml", ".html")):
+                xhtml_item = cand
+
+        if xhtml_item is None and entry.get("xhtml_path"):
+            x_rel = os.path.relpath(entry["xhtml_path"], opf_dir).replace("\\", "/")
+            if x_rel in existing_hrefs:
+                xhtml_item = existing_hrefs[x_rel]
+
+        if xhtml_item is None:
+            for it in manifest.xpath("./*[local-name()='item']"):
+                href = it.get("href", "")
+                if Path(href).stem == ch_id or Path(href).stem == s_path.stem:
+                    xhtml_item = it
+                    break
+
+        if xhtml_item is not None:
+            xhtml_item.set("media-overlay", smil_id)
+        else:
+            log.warning("Could not locate matching XHTML item for chapter '%s' in OPF manifest", ch_id)
+
+    # 6. Register audio files in manifest
+    audio_candidates: list[Path] = []
+    if audio_files:
+        for a in audio_files:
+            audio_candidates.append(Path(a))
+
+    for entry in processed_smils:
+        if entry.get("audio_path"):
+            audio_candidates.append(Path(entry["audio_path"]))
+
+    for candidate_dir in [opf_dir / "audio", work_dir / "audio"]:
+        if candidate_dir.is_dir():
+            for f in sorted(candidate_dir.iterdir()):
+                if f.is_file() and f.suffix.lower() in AUDIO_MIME_TYPES:
+                    audio_candidates.append(f)
+
+    seen_audio_paths: set[Path] = set()
+    for af in audio_candidates:
+        if not af.is_file():
+            continue
+        try:
+            resolved = af.resolve()
+        except Exception:
+            resolved = af
+        if resolved in seen_audio_paths:
+            continue
+        seen_audio_paths.add(resolved)
+
+        audio_rel_href = os.path.relpath(af, opf_dir).replace("\\", "/")
+        mime = AUDIO_MIME_TYPES.get(af.suffix.lower(), "audio/mpeg")
+
+        if audio_rel_href in existing_hrefs:
+            item = existing_hrefs[audio_rel_href]
+            item.set("media-type", mime)
+        else:
+            clean_stem = re.sub(r"[^a-zA-Z0-9_\-]", "_", af.stem)
+            base_audio_id = f"audio_{clean_stem}"
+            audio_id = base_audio_id
+            counter = 1
+            while audio_id in existing_ids:
+                audio_id = f"{base_audio_id}_{counter}"
+                counter += 1
+
+            audio_item = etree.SubElement(
+                manifest,
+                qname("item"),
+                attrib={
+                    "id": audio_id,
+                    "href": audio_rel_href,
+                    "media-type": mime,
+                },
+            )
+            existing_ids[audio_id] = audio_item
+            existing_hrefs[audio_rel_href] = audio_item
+
+    # 7. Update Media Overlays duration & active-class metadata
+    for old_meta in metadata.xpath("./*[local-name()='meta'][@property='media:duration' or @property='media:active-class']"):
+        metadata.remove(old_meta)
+
+    total_ms = 0
+    for entry in processed_smils:
+        dur_ms = entry["duration_ms"]
+        total_ms += dur_ms
+        smil_id = entry.get("smil_id")
+        dur_str = format_clock_hms(dur_ms)
+
+        meta_elem = etree.SubElement(
+            metadata,
+            qname("meta"),
+            attrib={
+                "property": "media:duration",
+                "refines": f"#{smil_id}",
+            },
+        )
+        meta_elem.text = dur_str
+
+    total_meta = etree.SubElement(
+        metadata,
+        qname("meta"),
+        attrib={"property": "media:duration"},
+    )
+    total_meta.text = format_clock_hms(total_ms)
+
+    active_meta = etree.SubElement(
+        metadata,
+        qname("meta"),
+        attrib={"property": "media:active-class"},
+    )
+    active_meta.text = active_class
+
+    # 8. Inject active CSS styling into book stylesheets
+    inject_active_class_css(work_dir, css_class=active_class, color=highlight_color)
+
+    # 9. Verify manifest hrefs exist
+    if validate_hrefs:
+        for it in manifest.xpath("./*[local-name()='item']"):
+            href = it.get("href")
+            if href:
+                target = opf_dir / href
+                if not target.exists():
+                    log.warning("Manifest item '%s' href '%s' not found on disk at %s", it.get("id"), href, target)
+
+    # 10. Write updated package document
+    tree.write(str(opf_path), encoding="utf-8", xml_declaration=True, pretty_print=True)
+    return opf_path
+
+
+def validate_epubcheck(
+    epub_path: Union[str, Path],
+    epubcheck_bin: str | None = None,
+) -> tuple[bool, str]:
+    """Validate an EPUB file using the EPUBCheck command line utility.
+
+    If epubcheck is not installed, logs a warning and returns (True, "skipped").
+    If installed, runs epubcheck and returns (is_valid, report).
+
+    Parameters
+    ----------
+    epub_path : Union[str, Path]
+        Path to EPUB file to validate.
+    epubcheck_bin : str, optional
+        Path or command name for epubcheck (default searches PATH).
+
+    Returns
+    -------
+    tuple[bool, str]
+        Tuple of (is_valid, report_text).
+    """
+    epub_path = Path(epub_path)
+    if not epub_path.is_file():
+        raise FileNotFoundError(f"EPUB file not found: {epub_path}")
+
+    bin_path = epubcheck_bin or shutil.which("epubcheck")
+    if bin_path is None:
+        log.warning("epubcheck is not installed; skipping validation. Install via 'brew install epubcheck'.")
+        return True, "EPUBCheck not installed; skipped validation"
+
+    try:
+        proc = subprocess.run(
+            [bin_path, str(epub_path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+        if proc.returncode == 0:
+            log.info("EPUBCheck validation passed for %s", epub_path.name)
+            return True, output.strip()
+        else:
+            log.error("EPUBCheck validation failed for %s (exit code %d):\n%s", epub_path.name, proc.returncode, output)
+            return False, output.strip()
+    except Exception as exc:
+        log.warning("Failed to run epubcheck on %s: %s", epub_path, exc)
+        return False, str(exc)
+
+
+def zip_epub(
+    work_dir: Union[str, Path],
+    output_path: Union[str, Path],
+) -> Path:
+    """Pack an unpacked EPUB directory into a compliant EPUB zip container.
+
+    Enforces EPUB container packaging specifications:
+    1. The first entry in the ZIP is 'mimetype' containing exactly
+       'application/epub+zip' stored uncompressed (ZIP_STORED).
+    2. All other files are added with standard Deflate compression (ZIP_DEFLATED),
+       except pre-compressed audio files which use ZIP_STORED for performance.
+    3. Excludes stray files (.DS_Store, __pycache__, temp files, hidden files).
+
+    Parameters
+    ----------
+    work_dir : Union[str, Path]
+        Directory containing unpacked EPUB files.
+    output_path : Union[str, Path]
+        Destination path for the packaged .epub file.
+
+    Returns
+    -------
+    Path
+        Path to the written EPUB file.
+
+    Raises
+    ------
+    PackagerError
+        If packaging fails or work_dir is invalid.
+    """
+    work_dir = Path(work_dir)
+    if not work_dir.is_dir():
+        raise PackagerError(f"Directory not found for packaging: {work_dir}")
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    temp_zip = output_path.with_suffix(".tmp.epub")
+
+    try:
+        with zipfile.ZipFile(temp_zip, "w") as zf:
+            # 1. First entry must be 'mimetype' stored uncompressed
+            zf.writestr("mimetype", b"application/epub+zip", compress_type=zipfile.ZIP_STORED)
+
+            # 2. Add all other files
+            for root, dirs, files in os.walk(work_dir):
+                dirs[:] = [
+                    d for d in dirs
+                    if not d.startswith(".")
+                    and d != "__pycache__"
+                    and not d.endswith(".tmp")
+                ]
+
+                for f in sorted(files):
+                    if f == "mimetype" or f.startswith(".") or f.endswith(("~", ".tmp", ".swp", ".bak")):
+                        continue
+                    if f.endswith(".epub"):
+                        continue
+
+                    full_path = Path(root) / f
+                    arcname = os.path.relpath(full_path, work_dir).replace("\\", "/")
+
+                    suffix = full_path.suffix.lower()
+                    if suffix in AUDIO_MIME_TYPES:
+                        comp_type = zipfile.ZIP_STORED
+                    else:
+                        comp_type = zipfile.ZIP_DEFLATED
+
+                    zf.write(full_path, arcname=arcname, compress_type=comp_type)
+
+        temp_zip.replace(output_path)
+        log.info("Packaged EPUB archive: %s (%d bytes)", output_path, output_path.stat().st_size)
+        return output_path
+    except Exception as exc:
+        if temp_zip.is_file():
+            temp_zip.unlink(missing_ok=True)
+        raise PackagerError(f"Failed to zip EPUB to {output_path}: {exc}") from exc
+
+
 def package(
     epub: Union[str, Path],
     audio: Sequence[Union[str, Path]],
     alignment: Union[str, Path, Sequence[Union[AlignedChapter, dict[str, Any]]]],
     output: Union[str, Path],
     work_dir: Union[str, Path, None] = None,
+    validate_epub: bool = True,
 ) -> Path:
     """High-level packaging pipeline entrypoint.
 
-    Injects span IDs into XHTML, generates SMIL playlists, updates OPF manifest,
-    and repacks the EPUB container with Media Overlays.
+    Injects span IDs into XHTML, generates SMIL playlists, updates the OPF
+    package manifest, packs the container into an EPUB archive with uncompressed
+    mimetype first, and validates the output with EPUBCheck.
 
     Parameters
     ----------
@@ -1019,15 +1669,45 @@ def package(
     output : Union[str, Path]
         Path to output EPUB.
     work_dir : Union[str, Path, None], optional
-        Working directory for unpacked files.
+        Working directory for unpacked files. If None, uses a temporary directory.
+    validate_epub : bool, default=True
+        Whether to run EPUBCheck validation if installed.
 
     Returns
     -------
     Path
         Path to output EPUB.
-    """
-    if work_dir is not None and Path(work_dir).is_dir():
-        inject_alignment_spans(work_dir, alignment)
-        generate_smil_playlists(work_dir, alignment, audio_source=audio)
 
-    return Path(output)
+    Raises
+    ------
+    PackagerError
+        If packaging or validation fails.
+    """
+    output_path = Path(output)
+
+    if work_dir is not None:
+        target_dir = Path(work_dir)
+        if not target_dir.is_dir():
+            from echopage import parser as epub_parser
+            epub_parser.unpack(epub, target_dir)
+
+        inject_alignment_spans(target_dir, alignment)
+        smil_results = generate_smil_playlists(target_dir, alignment, audio_source=audio)
+        update_opf_manifest(target_dir, smil_metadata=smil_results, audio_files=audio)
+        zip_epub(target_dir, output_path)
+    else:
+        with tempfile.TemporaryDirectory(prefix="echopage_pack_") as tmp_dir:
+            temp_target = Path(tmp_dir)
+            from echopage import parser as epub_parser
+            epub_parser.unpack(epub, temp_target)
+            inject_alignment_spans(temp_target, alignment)
+            smil_results = generate_smil_playlists(temp_target, alignment, audio_source=audio)
+            update_opf_manifest(temp_target, smil_metadata=smil_results, audio_files=audio)
+            zip_epub(temp_target, output_path)
+
+    if validate_epub:
+        is_valid, report = validate_epubcheck(output_path)
+        if not is_valid:
+            raise EpubCheckValidationError(f"EPUBCheck validation failed for {output_path}:\n{report}")
+
+    return output_path

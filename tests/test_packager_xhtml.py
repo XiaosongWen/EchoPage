@@ -559,3 +559,43 @@ def test_cli_inject_spans_missing_directory_errors(tmp_path):
     """Test CLI error handling when work directory does not exist."""
     with pytest.raises(SystemExit):
         cli.main(["inject-spans", str(tmp_path / "nonexistent"), str(SAMPLE_ALIGNMENT_PATH)])
+
+
+def test_inject_spans_nested_blocks(tmp_path):
+    """Test span injection into parent block with child blocks without corrupting child block text."""
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+        '<head><title>Test</title></head>\n'
+        '<body>\n'
+        '  <div>Intro header sentence.\n'
+        '    <p>Nested child paragraph sentence.</p>\n'
+        '    Concluding note sentence.\n'
+        '  </div>\n'
+        '</body>\n'
+        '</html>'
+    )
+    doc_path = tmp_path / "nested_blocks.xhtml"
+    doc_path.write_text(xml, encoding="utf-8")
+
+    sentences = parser.extract_sentences(doc_path)
+    assert len(sentences) == 3
+
+    timeline = [
+        {
+            "element_id": f"mo_s_{i+1:04d}",
+            "text": s.text,
+            "block_xpath": s.block_xpath,
+            "char_start": s.char_start,
+            "char_end": s.char_end,
+        }
+        for i, s in enumerate(sentences)
+    ]
+
+    doc = inject_spans_into_xhtml(doc_path, timeline)
+    root = doc.getroot()
+    all_ids = root.xpath("//@id")
+    assert set(all_ids) == {"mo_s_0001", "mo_s_0002", "mo_s_0003"}
+    assert all_ids == ["mo_s_0001", "mo_s_0003", "mo_s_0002"]
+
+

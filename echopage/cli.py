@@ -1,6 +1,7 @@
 import argparse
 import logging
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -31,6 +32,9 @@ def build_parser():
     b.add_argument("--device", choices=["cpu", "cuda", "mps"], help="compute device")
     b.add_argument("--work-dir", help="directory for intermediate files")
     b.add_argument("--keep-temp", action="store_true", help="keep temporary intermediate files")
+    b.add_argument("--force", action="store_true", help="force re-running intermediate alignment steps")
+    b.add_argument("--skip-spine", help="comma-separated list of spine item IDs to skip (e.g. cover,toc)")
+    b.add_argument("--dry-run", action="store_true", help="parse EPUB and audio, print planned mapping without aligning")
     b.add_argument("--verbose", action="store_true", help="enable debug logging")
     # probe subcommand
     p_probe = sub.add_parser("probe", help="inspect chapters and duration of an audio file")
@@ -79,6 +83,12 @@ def build_parser():
     p_smil.add_argument("alignment", help="path to alignment JSON file")
     p_smil.add_argument("--audio", nargs="*", help="optional audio source file(s) or directory")
 
+    # update-opf subcommand
+    p_opf = sub.add_parser("update-opf", help="update OPF package manifest with Media Overlays and audio")
+    p_opf.add_argument("work_dir", help="work directory containing unpacked EPUB")
+    p_opf.add_argument("--alignment", help="optional path to alignment JSON file")
+    p_opf.add_argument("--audio", nargs="*", help="optional audio source file(s) or directory")
+
     return p
 
 
@@ -121,25 +131,119 @@ def validate(args, parser):
             for a in args.audio:
                 if not Path(a).exists():
                     parser.error(f"audio path not found: {a}")
+    elif args.command == "update-opf":
+        if not Path(args.work_dir).is_dir():
+            parser.error(f"directory not found: {args.work_dir}")
+        if getattr(args, "alignment", None) and not Path(args.alignment).is_file():
+            parser.error(f"file not found: {args.alignment}")
+        if getattr(args, "audio", None):
+            for a in args.audio:
+                if not Path(a).exists():
+                    parser.error(f"audio path not found: {a}")
+
+
+_PHASE_HINTS: dict[str, str] = {
+    "decrypt": "Verify that audio files exist and Audible credentials (--activation-bytes or --audible-key/--audible-iv) are correct.",
+    "parse": "Check that the EPUB file is valid and contains standard EPUB 2/3 OPF package metadata.",
+    "align": "Ensure WhisperX / PyTorch dependencies are installed and audio matches the book text. Try --device cpu or --model-size tiny.",
+    "package": "Verify that EPUB container directories and permissions are writable.",
+}
 
 
 def _phase(name, fn, *a, **kw):
     log.info("%s: start", name)
-    result = fn(*a, **kw)
-    log.info("%s: done", name)
-    return result
+    try:
+        result = fn(*a, **kw)
+        log.info("%s: done", name)
+        return result
+    except Exception as exc:
+        log.error("Build failed in phase '%s': %s", name, exc)
+        hint = _PHASE_HINTS.get(name)
+        if hint:
+            log.info("Fix hint (%s): %s", name, hint)
+        raise
 
 
 def run_build(args):
-    audio_files = _phase("decrypt", decryptor.decrypt, args.audio,
-                         activation_bytes=args.activation_bytes,
-                         audible_key=args.audible_key, audible_iv=args.audible_iv,
-                         work_dir=args.work_dir)
-    book = _phase("parse", epub_parser.parse, args.epub)
-    alignment = _phase("align", aligner.align, book, audio_files,
-                       granularity=args.granularity, model_size=args.model_size,
-                       device=args.device, work_dir=args.work_dir)
-    _phase("package", packager.package, args.epub, audio_files, alignment, args.output)
+    work_dir = Path(args.work_dir) if args.work_dir else Path(f".echopage_build_{Path(args.epub).stem}")
+    work_dir.mkdir(parents=True, exist_ok=True)
+    epub_dir = work_dir / "epub"
+    epub_dir.mkdir(parents=True, exist_ok=True)
+
+    audio_files = _phase(
+        "decrypt",
+        decryptor.decrypt,
+        args.audio,
+        activation_bytes=args.activation_bytes,
+        audible_key=args.audible_key,
+        audible_iv=args.audible_iv,
+        work_dir=work_dir,
+    )
+    book = _phase(
+        "parse",
+        epub_parser.parse,
+        args.epub,
+        work_dir=epub_dir,
+    )
+
+    skip_spine_list = (
+        [s.strip() for s in args.skip_spine.split(",") if s.strip()]
+        if getattr(args, "skip_spine", None)
+        else None
+    )
+
+    if getattr(args, "dry_run", False):
+        print("Dry run: planned chapter-to-audio mapping:")
+        chapters = book.get("chapters", [])
+        if skip_spine_list:
+            skip_set = set(skip_spine_list)
+            chapters = [c for c in chapters if c.get("id") not in skip_set]
+        chapters = [c for c in chapters if c.get("sentences")]
+        audio_units = aligner.prepare_audio_units(audio_files, work_dir=work_dir)
+        pairs = aligner.map_audio_units_to_chapters(chapters, audio_units)
+        for ch, unit in pairs:
+            s_count = len(ch.get("sentences", []))
+            dur = max(0.0, unit.end_s - unit.start_s)
+            print(f"  - Chapter '{ch['id']}' ({ch.get('href', '')}, {s_count} sentences) -> Audio '{unit.path.name}' ({unit.start_s:.2f}s - {unit.end_s:.2f}s, {dur:.2f}s)")
+        return
+
+    alignment_json = work_dir / "alignment.json"
+    force = getattr(args, "force", False)
+
+    if not force and alignment_json.is_file():
+        log.info("align: reusing cached alignment from %s", alignment_json)
+        alignment = _phase("align", aligner.load_alignment, alignment_json)
+    else:
+        alignment = _phase(
+            "align",
+            aligner.align,
+            book,
+            audio_files,
+            granularity=args.granularity,
+            model_size=args.model_size,
+            device=args.device,
+            work_dir=work_dir,
+            skip_spine=skip_spine_list,
+        )
+        if alignment:
+            aligner.save_alignment(alignment, alignment_json)
+
+    # Clean up temporary scratch WAV files unless --keep-temp is set (#7)
+    if not getattr(args, "keep_temp", False):
+        temp_wav_dir = work_dir / "wav16k"
+        if temp_wav_dir.is_dir():
+            shutil.rmtree(temp_wav_dir, ignore_errors=True)
+            log.debug("Cleaned up temporary WAV directory %s", temp_wav_dir)
+
+    _phase(
+        "package",
+        packager.package,
+        args.epub,
+        audio_files,
+        alignment,
+        args.output,
+        work_dir=epub_dir,
+    )
 
 
 def main(argv=None):
@@ -212,7 +316,13 @@ def main(argv=None):
             print(f"Generated SMIL playlists for {len(results)} chapters:")
             for ch_id, meta in results.items():
                 print(f"  - {ch_id}: {meta.smil_path.name} ({meta.duration_clock}, {meta.par_count} clips)")
-    except (decryptor.DecryptionError, audio.AudioError, epub_parser.EpubError, aligner.AlignmentError, packager.PackagerError) as exc:
+        elif args.command == "update-opf":
+            smil_meta = None
+            if getattr(args, "alignment", None):
+                smil_meta = packager.generate_smil_playlists(args.work_dir, args.alignment, audio_source=args.audio)
+            opf_path = packager.update_opf_manifest(args.work_dir, smil_metadata=smil_meta, audio_files=args.audio)
+            print(f"Updated OPF package manifest: {opf_path}")
+    except (decryptor.DecryptionError, audio.AudioError, epub_parser.EpubError, aligner.AlignmentError, packager.PackagerError, NotImplementedError, Exception) as exc:
         log.error("error: %s", exc)
         return 1
     return 0

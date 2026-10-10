@@ -25,5 +25,6 @@ progress.md
 
 # Temporary extraction & parts
 .echopage_unpack_*/
+.echopage_build_*/
 *_parts/
 

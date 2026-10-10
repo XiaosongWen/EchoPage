@@ -142,6 +142,7 @@ def test_missing_ffmpeg_error(tmp_path):
 def test_mock_subprocess_exact_ffmpeg_command_aax(tmp_path):
     out_dir = tmp_path / "out"
     expected_out = out_dir / "sample.m4b"
+    expected_tmp = out_dir / "sample.tmp.m4b"
 
     with patch("subprocess.run") as mock_run:
         # Mock successful ffmpeg run
@@ -166,13 +167,14 @@ def test_mock_subprocess_exact_ffmpeg_command_aax(tmp_path):
             "-vn",
             "-c:a",
             "copy",
-            str(expected_out),
+            str(expected_tmp),
         ]
 
 
 def test_mock_subprocess_exact_ffmpeg_command_aaxc(tmp_path):
     out_dir = tmp_path / "out"
     expected_out = out_dir / "sample.m4b"
+    expected_tmp = out_dir / "sample.tmp.m4b"
 
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
@@ -202,7 +204,7 @@ def test_mock_subprocess_exact_ffmpeg_command_aaxc(tmp_path):
             "-vn",
             "-c:a",
             "copy",
-            str(expected_out),
+            str(expected_tmp),
         ]
 
 
