@@ -27,13 +27,15 @@ def build_parser():
     b.add_argument("--audible-iv", help="Audible AAXC IV (requires --audible-key)")
     b.add_argument("--granularity", choices=["sentence", "word"], default="sentence",
                    help="sync granularity (default: sentence)")
-    b.add_argument("--model-size", choices=["small", "medium", "large-v3"], default="small",
-                   help="WhisperX model size (default: small)")
+    b.add_argument("--model-size", choices=["auto", "small", "medium", "large-v3", "large-v2", "base", "tiny"], default="auto",
+                   help="WhisperX model size (default: auto, selects largest suitable model for hardware)")
     b.add_argument("--device", choices=["cpu", "cuda", "mps"], help="compute device")
     b.add_argument("--work-dir", help="directory for intermediate files")
     b.add_argument("--keep-temp", action="store_true", help="keep temporary intermediate files")
     b.add_argument("--force", action="store_true", help="force re-running intermediate alignment steps")
     b.add_argument("--skip-spine", help="comma-separated list of spine item IDs to skip (e.g. cover,toc)")
+    b.add_argument("--auto-map", action=argparse.BooleanOptionalAction, default=True,
+                   help="automatically match audio to EPUB chapters and skip non-narrated pages (default: True)")
     b.add_argument("--dry-run", action="store_true", help="parse EPUB and audio, print planned mapping without aligning")
     b.add_argument("--verbose", action="store_true", help="enable debug logging")
     # probe subcommand
@@ -67,10 +69,13 @@ def build_parser():
     p_align = sub.add_parser("align", help="align EPUB sentences to audio narration")
     p_align.add_argument("epub", help="path to EPUB file")
     p_align.add_argument("audio", nargs="+", help="audio file(s)")
-    p_align.add_argument("--model-size", choices=["small", "medium", "large-v3", "base", "tiny"], default="small")
+    p_align.add_argument("--model-size", choices=["auto", "small", "medium", "large-v3", "large-v2", "base", "tiny"], default="auto",
+                         help="WhisperX model size (default: auto, selects largest suitable model for hardware)")
     p_align.add_argument("--device", choices=["cpu", "cuda", "mps"])
     p_align.add_argument("--work-dir", help="working directory")
     p_align.add_argument("--json-out", help="save alignment output JSON to file")
+    p_align.add_argument("--auto-map", action=argparse.BooleanOptionalAction, default=True,
+                         help="automatically match audio to EPUB chapters and skip non-narrated pages (default: True)")
 
     # inject-spans subcommand
     p_inject = sub.add_parser("inject-spans", help="inject sentence span IDs into XHTML documents")
@@ -191,6 +196,7 @@ def run_build(args):
         if getattr(args, "skip_spine", None)
         else None
     )
+    auto_map_enabled = getattr(args, "auto_map", True)
 
     if getattr(args, "dry_run", False):
         print("Dry run: planned chapter-to-audio mapping:")
@@ -200,11 +206,33 @@ def run_build(args):
             chapters = [c for c in chapters if c.get("id") not in skip_set]
         chapters = [c for c in chapters if c.get("sentences")]
         audio_units = aligner.prepare_audio_units(audio_files, work_dir=work_dir)
-        pairs = aligner.map_audio_units_to_chapters(chapters, audio_units)
+
+        use_automap = auto_map_enabled and (skip_spine_list is None or len(chapters) != len(audio_units))
+        pairs, skipped = aligner.map_audio_units_to_chapters(
+            chapters,
+            audio_units,
+            auto_map=use_automap,
+            return_skipped=True,
+        )
         for ch, unit in pairs:
             s_count = len(ch.get("sentences", []))
             dur = max(0.0, unit.end_s - unit.start_s)
-            print(f"  - Chapter '{ch['id']}' ({ch.get('href', '')}, {s_count} sentences) -> Audio '{unit.path.name}' ({unit.start_s:.2f}s - {unit.end_s:.2f}s, {dur:.2f}s)")
+            ch_title_desc = f" ({ch.get('title')})" if ch.get("title") else ""
+            audio_label = unit.title or unit.path.name
+            print(f"  - Chapter '{ch['id']}'{ch_title_desc} ({ch.get('href', '')}, {s_count} sentences) -> Audio '{audio_label}' ({unit.start_s:.2f}s - {unit.end_s:.2f}s, {dur:.2f}s)")
+
+        if skipped:
+            print(f"\nAuto-skipped chapters ({len(skipped)}):")
+            for ch, reason in skipped:
+                ch_label = ch.get("title") or ch.get("href") or ch.get("id")
+                print(f"  - Skipped '{ch_label}' ({ch['id']}): {reason}")
+
+        model_setting = getattr(args, "model_size", "auto")
+        if model_setting == "auto":
+            detected_model = aligner.get_optimal_model_size(getattr(args, "device", None))
+            print(f"\nModel selection: auto -> '{detected_model}'")
+        else:
+            print(f"\nModel selection: '{model_setting}'")
         return
 
     alignment_json = work_dir / "alignment.json"
@@ -224,6 +252,7 @@ def run_build(args):
             device=args.device,
             work_dir=work_dir,
             skip_spine=skip_spine_list,
+            auto_map=auto_map_enabled,
         )
         if alignment:
             aligner.save_alignment(alignment, alignment_json)
@@ -296,6 +325,7 @@ def main(argv=None):
                 model_size=args.model_size,
                 device=args.device,
                 work_dir=args.work_dir,
+                auto_map=getattr(args, "auto_map", True),
             )
             print(f"Aligned {len(alignment)} chapters:")
             for ch in alignment:

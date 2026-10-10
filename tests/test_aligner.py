@@ -14,6 +14,7 @@ from echopage.aligner import (
     TimelineEntry,
     align,
     align_sentence_words,
+    get_optimal_model_size,
     map_audio_units_to_chapters,
     match_words,
     normalize_word,
@@ -424,3 +425,51 @@ def test_align_skips_chapters_without_sentences():
     heard = [[{"word": "Hello", "start": 0.0, "end": 0.5}, {"word": "world", "start": 0.6, "end": 1.0}]]
     res = align(book, [unit], precomputed_heard_words=heard)
     assert [c.spine_item_id for c in res] == ["c1"]
+
+
+def test_get_optimal_model_size_cpu_and_mps():
+    assert get_optimal_model_size(device="cpu") == "small"
+    assert get_optimal_model_size(device="mps") == "small"
+
+
+def test_get_optimal_model_size_cuda(monkeypatch):
+    import torch
+
+    class DummyDeviceProps:
+        def __init__(self, name: str, memory_gb: float):
+            self.name = name
+            self.total_memory = int(memory_gb * (1024**3))
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+
+    # 1. High-memory GPU (>= 7GB, e.g. RTX 3070 8GB, RTX 4090 24GB) -> large-v3
+    monkeypatch.setattr(torch.cuda, "get_device_properties", lambda idx: DummyDeviceProps("NVIDIA GeForce RTX 3070", 8.0))
+    assert get_optimal_model_size(device="cuda") == "large-v3"
+    assert get_optimal_model_size(device="auto") == "large-v3"
+
+    # 2. Mid-memory GPU (>= 5GB, e.g. RTX 2060 6GB) -> medium
+    monkeypatch.setattr(torch.cuda, "get_device_properties", lambda idx: DummyDeviceProps("NVIDIA GeForce RTX 2060", 6.0))
+    assert get_optimal_model_size(device="cuda") == "medium"
+
+    # 3. Low-memory GPU (>= 3GB, e.g. GTX 1650 4GB) -> small
+    monkeypatch.setattr(torch.cuda, "get_device_properties", lambda idx: DummyDeviceProps("NVIDIA GeForce GTX 1650", 4.0))
+    assert get_optimal_model_size(device="cuda") == "small"
+
+    # 4. Very low-memory GPU (< 3GB) -> base
+    monkeypatch.setattr(torch.cuda, "get_device_properties", lambda idx: DummyDeviceProps("NVIDIA GeForce GT 1030", 2.0))
+    assert get_optimal_model_size(device="cuda") == "base"
+
+
+def test_cli_model_size_defaults_to_auto():
+    from echopage.cli import build_parser
+
+    parser = build_parser()
+    args = parser.parse_args(["build", "--epub", "b.epub", "--audio", "a.m4b", "--output", "out.epub"])
+    assert args.model_size == "auto"
+
+    args2 = parser.parse_args(["align", "b.epub", "a.m4b"])
+    assert args2.model_size == "auto"
+
+    args3 = parser.parse_args(["build", "--epub", "b.epub", "--audio", "a.m4b", "--output", "out.epub", "--model-size", "large-v3"])
+    assert args3.model_size == "large-v3"
+

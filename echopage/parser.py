@@ -437,8 +437,210 @@ def parse_epub(
     if work_dir is None:
         work_dir = epub_path.parent / f".echopage_unpack_{epub_path.stem}"
 
+def extract_navigation_metadata(
+    work_dir: Union[str, Path],
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Extract chapter title mappings from EPUB navigation document (nav.xhtml) and NCX (toc.ncx).
+
+    Also extracts landmarks/guide metadata (e.g. 'toc', 'copyright', 'cover').
+
+    Returns
+    -------
+    tuple[dict[str, str], dict[str, str]]
+        (toc_titles_map, guide_types_map)
+        Keys are normalized relative paths and filenames matching manifest hrefs.
+    """
+    work_dir = Path(work_dir)
+    container_path = work_dir / "META-INF" / "container.xml"
+    if not container_path.is_file():
+        return {}, {}
+
+    try:
+        container_tree = etree.parse(str(container_path))
+    except Exception:
+        return {}, {}
+
+    rootfile_nodes = container_tree.xpath("//*[local-name()='rootfile'][@full-path]")
+    if not rootfile_nodes:
+        return {}, {}
+
+    opf_rel_path = rootfile_nodes[0].get("full-path")
+    opf_path = work_dir / opf_rel_path
+    if not opf_path.is_file():
+        return {}, {}
+
+    try:
+        opf_tree = etree.parse(str(opf_path))
+    except Exception:
+        return {}, {}
+
+    opf_dir = Path(opf_rel_path).parent
+    toc_map: dict[str, str] = {}
+    guide_map: dict[str, str] = {}
+
+    def _register(d: dict[str, str], href_val: str, text_val: str):
+        if not href_val or not text_val:
+            return
+        clean_href = href_val.split("#")[0].strip()
+        if clean_href:
+            d[clean_href] = text_val
+            d[Path(clean_href).name] = text_val
+
+    # 1. Parse OPF <guide> references
+    for ref in opf_tree.xpath("//*[local-name()='guide']/*[local-name()='reference']"):
+        href = ref.get("href", "")
+        gtype = ref.get("type", "")
+        _register(guide_map, href, gtype)
+
+    # 2. Inspect manifest items for NCX and Nav XHTML documents
+    ncx_hrefs: list[str] = []
+    nav_hrefs: list[str] = []
+    for item in opf_tree.xpath("//*[local-name()='manifest']/*[local-name()='item']"):
+        mtype = (item.get("media-type") or "").lower()
+        item_id = (item.get("id") or "").lower()
+        href = item.get("href") or ""
+        props = (item.get("properties") or "").lower()
+
+        if "ncx" in mtype or item_id == "ncx" or href.lower().endswith(".ncx"):
+            ncx_hrefs.append(href)
+        if "nav" in props or item_id == "nav" or href.lower().endswith("nav.xhtml"):
+            nav_hrefs.append(href)
+
+    for ncx_href in ncx_hrefs:
+        ncx_path = (work_dir / opf_dir / ncx_href) if str(opf_dir) != "." else (work_dir / ncx_href)
+        if ncx_path.is_file():
+            try:
+                ncx_tree = etree.parse(str(ncx_path))
+                for np in ncx_tree.xpath("//*[local-name()='navPoint']"):
+                    content_src = "".join(np.xpath(".//*[local-name()='content']/@src"))
+                    label_text = "".join(np.xpath(".//*[local-name()='text']/text()")).strip()
+                    _register(toc_map, content_src, label_text)
+            except Exception as exc:
+                log.warning("Could not parse NCX document (%s): %s", ncx_path, exc)
+
+    for nav_href in nav_hrefs:
+        nav_path = (work_dir / opf_dir / nav_href) if str(opf_dir) != "." else (work_dir / nav_href)
+        if nav_path.is_file():
+            try:
+                nav_tree = etree.parse(str(nav_path), parser=etree.XMLParser(recover=True))
+                for a in nav_tree.xpath("//*[local-name()='nav']//*[local-name()='a']"):
+                    href = a.get("href", "")
+                    link_text = "".join(a.itertext()).strip()
+                    _register(toc_map, href, link_text)
+                    ep_type = a.get("{http://www.idpf.org/2007/ops}type") or a.get("type", "")
+                    if ep_type:
+                        _register(guide_map, href, ep_type)
+            except Exception as exc:
+                log.warning("Could not parse Nav document (%s): %s", nav_path, exc)
+
+    return toc_map, guide_map
+
+
+def extract_chapter_title(
+    xhtml_source: Union[str, Path],
+    toc_title: str | None = None,
+    sentences: Sequence[Sentence] | None = None,
+) -> str:
+    """Extract a meaningful title for an EPUB chapter using prioritized fallback:
+    1. Navigation document (nav.xhtml) or NCX (toc.ncx) label.
+    2. Document <title> tag inside <head>.
+    3. First prominent heading (<h1>, <h2>, <h3>, or <p/div class="title|chapter|head">).
+    4. First non-empty text sentence as fallback.
+    """
+    # 1. NCX or Nav document label
+    if toc_title and toc_title.strip():
+        return toc_title.strip()
+
+    # Load XHTML tree
+    if isinstance(xhtml_source, Path) or (isinstance(xhtml_source, str) and not xhtml_source.strip().startswith("<")):
+        source_path = Path(xhtml_source)
+        if not source_path.is_file():
+            if sentences:
+                for s in sentences:
+                    txt = s.text.strip() if hasattr(s, "text") else str(s).strip()
+                    if txt:
+                        return txt
+            return ""
+        raw_bytes = source_path.read_bytes()
+    else:
+        raw_bytes = xhtml_source.encode("utf-8") if isinstance(xhtml_source, str) else xhtml_source
+
+    try:
+        doc = etree.fromstring(raw_bytes, parser=etree.XMLParser(recover=True))
+    except Exception:
+        doc = None
+
+    if doc is not None:
+        # 2. Document <title> inside <head>
+        title_nodes = doc.xpath("//*[local-name()='head']/*[local-name()='title']")
+        if title_nodes:
+            t_text = "".join(title_nodes[0].itertext()).strip()
+            if t_text and t_text.lower() not in ("untitled", "unknown"):
+                return t_text
+
+        # 3. First prominent heading (h1, h2, h3 or p/div with class title|chapter|head)
+        headings = doc.xpath(
+            "//*[local-name()='h1' or local-name()='h2' or local-name()='h3']"
+            " | "
+            "//*[(local-name()='p' or local-name()='div') and ("
+            "contains(@class, 'title') or contains(@class, 'chapter') or contains(@class, 'head')"
+            ")]"
+        )
+        for h in headings:
+            h_text = "".join(h.itertext()).strip()
+            if h_text:
+                return h_text
+
+    def _sent_text(s) -> str:
+        if isinstance(s, dict):
+            return str(s.get("text", "")).strip()
+        return str(getattr(s, "text", s)).strip()
+
+    # 4. First non-empty text sentence as last-resort fallback
+    if sentences:
+        for s in sentences:
+            txt = _sent_text(s)
+            if txt:
+                return txt
+
+    if doc is not None:
+        body_text = "".join(doc.xpath("//*[local-name()='body']//text()")).strip()
+        if body_text:
+            first_line = body_text.splitlines()[0].strip()
+            if first_line:
+                return first_line
+
+    return ""
+
+
+def parse_epub(
+    epub_path: Union[str, Path],
+    work_dir: Union[str, Path, None] = None,
+) -> dict[str, Any]:
+    """High-level pipeline utility to unpack an EPUB and extract all chapter sentences.
+
+    Parameters
+    ----------
+    epub_path : Union[str, Path]
+        Path to the EPUB file.
+    work_dir : Union[str, Path, None], optional
+        Working directory for unpacking. If None, uses a temporary or sibling folder.
+
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary with:
+        - "work_dir": Path
+        - "spine": list[PackageItem]
+        - "chapters": list[dict] with chapter metadata, title, and extracted sentences.
+    """
+    epub_path = Path(epub_path)
+    if work_dir is None:
+        work_dir = epub_path.parent / f".echopage_unpack_{epub_path.stem}"
+
     unpacked_dir = unpack(epub_path, work_dir)
     spine = read_package(unpacked_dir)
+    toc_map, guide_map = extract_navigation_metadata(unpacked_dir)
 
     chapters = []
     sentence_counter = 1
@@ -446,11 +648,22 @@ def parse_epub(
         xhtml_file = item.file_path
         sentences = extract_sentences(xhtml_file, start_id=sentence_counter)
         sentence_counter += len(sentences)
+
+        toc_title = toc_map.get(item.href) or toc_map.get(item.path.name)
+        guide_type = guide_map.get(item.href) or guide_map.get(item.path.name)
+        chapter_title = extract_chapter_title(
+            xhtml_file,
+            toc_title=toc_title,
+            sentences=sentences,
+        )
+
         chapters.append({
             "id": item.id,
             "href": item.href,
             "media_type": item.media_type,
             "file_path": xhtml_file,
+            "title": chapter_title,
+            "guide_type": guide_type,
             "sentences": sentences,
         })
 

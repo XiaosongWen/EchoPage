@@ -21,7 +21,16 @@ from echopage.alignment import (
     validate_alignment,
 )
 from echopage.audio import AudioUnit, prepare_audio_units, to_wav16k
+from echopage.automap import (
+    align_chapter_subsequence,
+    detect_non_narrated_section,
+    normalize_chapter_title,
+    title_similarity,
+)
 from echopage.parser import Sentence, parse_epub
+
+# Alias for external convenience
+auto_map_chapters = align_chapter_subsequence
 
 log = logging.getLogger("echopage.aligner")
 
@@ -345,7 +354,9 @@ def map_audio_units_to_chapters(
     chapters: Sequence[dict],
     audio_units: Sequence[AudioUnit],
     manual_mapping: dict[int, int] | None = None,
-) -> list[tuple[dict, AudioUnit]]:
+    auto_map: bool = False,
+    return_skipped: bool = False,
+) -> Union[list[tuple[dict, AudioUnit]], tuple[list[tuple[dict, AudioUnit]], list[tuple[dict, str]]]]:
     """Map EPUB spine chapters to audio units.
 
     Parameters
@@ -356,11 +367,15 @@ def map_audio_units_to_chapters(
         List of audio units.
     manual_mapping : dict[int, int], optional
         Optional dictionary mapping chapter index -> audio unit index.
+    auto_map : bool, optional
+        Whether to run automatic subsequence alignment and auto-skip non-narrated pages.
+    return_skipped : bool, optional
+        If True, returns a tuple of (matched_pairs, skipped_chapters_with_reasons).
 
     Returns
     -------
-    list[tuple[dict, AudioUnit]]
-        List of (chapter_dict, audio_unit) pairs.
+    list[tuple[dict, AudioUnit]] or tuple[list[tuple[dict, AudioUnit]], list[tuple[dict, str]]]
+        List of (chapter_dict, audio_unit) pairs, or tuple with skipped chapters.
 
     Raises
     ------
@@ -375,7 +390,16 @@ def map_audio_units_to_chapters(
             if au_idx < 0 or au_idx >= len(audio_units):
                 raise AlignmentMismatchError(f"Manual mapping invalid audio unit index: {au_idx}")
             pairs.append((chapters[ch_idx], audio_units[au_idx]))
-        return pairs
+        return (pairs, []) if return_skipped else pairs
+
+    if auto_map:
+        matched, skipped = align_chapter_subsequence(chapters, audio_units)
+        if len(matched) == len(audio_units):
+            return (matched, skipped) if return_skipped else matched
+        log.warning(
+            "Auto-map could only match %d of %d audio units against %d chapters",
+            len(matched), len(audio_units), len(chapters),
+        )
 
     if len(chapters) != len(audio_units):
         epub_names = [c.get("id", f"ch_{i}") for i, c in enumerate(chapters)]
@@ -388,12 +412,62 @@ def map_audio_units_to_chapters(
             f"Please verify audio files match the EPUB chapters or provide a manual chapter mapping."
         )
 
-    return list(zip(chapters, audio_units))
+    pairs = list(zip(chapters, audio_units))
+    return (pairs, []) if return_skipped else pairs
+
+
+def get_optimal_model_size(device: str | None = None) -> str:
+    """Determine the largest suitable Whisper model based on available hardware.
+
+    Returns
+    -------
+    str
+        'large-v3' for high-memory GPUs (>= 7GB VRAM, e.g. RTX 3070+),
+        'medium' for mid-range GPUs (>= 5GB VRAM),
+        'small' for lower-memory GPUs (>= 3GB VRAM) or CPU/MPS fallback.
+    """
+    try:
+        import torch
+
+        target_device = device
+        if target_device is None or target_device == "auto":
+            target_device = "cuda" if torch.cuda.is_available() else "cpu"
+        elif target_device == "mps":
+            target_device = "cpu"
+
+        if target_device.startswith("cuda") and torch.cuda.is_available():
+            device_idx = 0
+            if ":" in target_device:
+                try:
+                    device_idx = int(target_device.split(":", 1)[1])
+                except ValueError:
+                    device_idx = 0
+
+            device_props = torch.cuda.get_device_properties(device_idx)
+            vram_gb = device_props.total_memory / (1024**3)
+            log.info(
+                "Detected CUDA GPU '%s' with %.1f GB VRAM",
+                device_props.name,
+                vram_gb,
+            )
+            if vram_gb >= 7.0:
+                return "large-v3"
+            elif vram_gb >= 5.0:
+                return "medium"
+            elif vram_gb >= 3.0:
+                return "small"
+            else:
+                return "base"
+    except Exception as e:
+        log.debug("Could not inspect GPU memory for model selection: %s", e)
+
+    # CPU/MPS fallback: 'small' is the practical upper limit for CPU inference speed
+    return "small"
 
 
 def transcribe_and_align_audio(
     audio_path: Union[str, Path],
-    model_size: str = "small",
+    model_size: str = "auto",
     device: str | None = None,
     compute_type: str | None = None,
     batch_size: int = 16,
@@ -432,6 +506,10 @@ def transcribe_and_align_audio(
     align_device = device
     if compute_type is None:
         compute_type = "float16" if device == "cuda" else "int8"
+
+    if model_size is None or model_size == "auto":
+        model_size = get_optimal_model_size(device=device)
+        log.info("Auto-selected Whisper model '%s' for device '%s'", model_size, device)
 
     log.debug("Loading audio: %s", audio_file)
     audio = whisperx.load_audio(str(audio_file))
@@ -489,13 +567,14 @@ def align(
     book: Union[str, Path, dict],
     audio: Union[str, Path, Sequence[Union[str, Path]], Sequence[AudioUnit]],
     granularity: str = "sentence",
-    model_size: str = "small",
+    model_size: str = "auto",
     device: str | None = None,
     compute_type: str | None = None,
     work_dir: Union[str, Path, None] = None,
     manual_mapping: dict[int, int] | None = None,
     precomputed_heard_words: Sequence[Sequence[Union[dict, HeardWord]]] | None = None,
     skip_spine: Sequence[str] | None = None,
+    auto_map: bool = True,
 ) -> list[AlignedChapter]:
     """High-level pipeline: Match EPUB sentences to audio narration.
 
@@ -508,7 +587,7 @@ def align(
     granularity : str, optional
         Alignment granularity (currently supports 'sentence').
     model_size : str, optional
-        Whisper model size ('small', 'medium', 'base', etc.).
+        Whisper model size ('auto', 'small', 'medium', 'large-v3', etc. Default: 'auto').
     device : str, optional
         Execution device ('cpu', 'cuda', 'auto').
     compute_type : str, optional
@@ -521,6 +600,8 @@ def align(
         Optional precomputed heard words per audio unit (for testing and offline runs).
     skip_spine : Sequence[str], optional
         Optional list of spine item IDs to exclude from alignment.
+    auto_map : bool, optional
+        Automatically match audio units to EPUB chapters and auto-skip non-narrated pages.
 
     Returns
     -------
@@ -530,6 +611,11 @@ def align(
     """
     if granularity != "sentence":
         raise NotImplementedError(f"Granularity '{granularity}' is not yet supported. Use 'sentence'.")
+
+    # Resolve model size if auto
+    if model_size is None or model_size == "auto":
+        model_size = get_optimal_model_size(device=device)
+        log.info("Auto-selected Whisper model size '%s' based on hardware capabilities", model_size)
 
     # Step 1: Parse EPUB if needed
     if isinstance(book, (str, Path)):
@@ -557,7 +643,13 @@ def align(
         audio_units = prepare_audio_units(audio, work_dir=work_dir)
 
     # Step 3: Map audio units to EPUB spine chapters
-    mapped_pairs = map_audio_units_to_chapters(chapters, audio_units, manual_mapping=manual_mapping)
+    use_automap = auto_map and (skip_spine is None or len(chapters) != len(audio_units))
+    mapped_pairs = map_audio_units_to_chapters(
+        chapters,
+        audio_units,
+        manual_mapping=manual_mapping,
+        auto_map=use_automap,
+    )
 
     # Step 4: Transcribe, align, and match sentences
     aligned_chapters: list[AlignedChapter] = []
