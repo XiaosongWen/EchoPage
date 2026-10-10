@@ -973,7 +973,22 @@ def generate_smil_playlists(
                     if cand2.is_file():
                         source_audio_path = cand2
             elif isinstance(audio_source, (str, Path)) and Path(audio_source).is_file():
-                source_audio_path = Path(audio_source)
+                p = Path(audio_source)
+                if p.name == audio_fn or p.name == Path(audio_fn).name or len(chapters) == 1:
+                    source_audio_path = p
+                else:
+                    # Check if split directory exists next to file or in work_dir / work_dir.parent
+                    for split_cand in (
+                        work_dir / p.stem,
+                        work_dir.parent / p.stem if work_dir and work_dir.parent else None,
+                        p.parent / f"{p.stem}_parts",
+                        p.parent / p.stem,
+                    ):
+                        if split_cand and split_cand.is_dir():
+                            c = split_cand / Path(audio_fn).name
+                            if c.is_file():
+                                source_audio_path = c
+                                break
             elif isinstance(audio_source, (list, tuple, Sequence)):
                 for item in audio_source:
                     p = Path(item)
@@ -985,7 +1000,21 @@ def generate_smil_playlists(
                     elif p.name == Path(audio_fn).name or p.name == audio_fn:
                         source_audio_path = p
                         break
-                if source_audio_path is None and idx < len(audio_source):
+                    elif p.is_file():
+                        for split_cand in (
+                            work_dir / p.stem,
+                            work_dir.parent / p.stem if work_dir and work_dir.parent else None,
+                            p.parent / f"{p.stem}_parts",
+                            p.parent / p.stem,
+                        ):
+                            if split_cand and split_cand.is_dir():
+                                c = split_cand / Path(audio_fn).name
+                                if c.is_file():
+                                    source_audio_path = c
+                                    break
+                        if source_audio_path is not None:
+                            break
+                if source_audio_path is None and len(audio_source) == len(chapters) and idx < len(audio_source):
                     p = Path(audio_source[idx])
                     if p.is_file():
                         source_audio_path = p
@@ -994,13 +1023,31 @@ def generate_smil_playlists(
             dest_in_target = target_audio_dir / Path(audio_fn).name
             if dest_in_target.is_file():
                 source_audio_path = dest_in_target
-            elif (work_dir / audio_fn).is_file():
-                source_audio_path = work_dir / audio_fn
-            elif (work_dir / Path(audio_fn).name).is_file():
-                source_audio_path = work_dir / Path(audio_fn).name
-            elif (content_dir / audio_fn).is_file():
-                source_audio_path = content_dir / audio_fn
-            elif Path(audio_fn).is_file():
+            else:
+                for candidate_dir in [
+                    work_dir,
+                    content_dir,
+                    work_dir.parent if work_dir and work_dir.parent else None,
+                ]:
+                    if candidate_dir and candidate_dir.is_dir():
+                        c1 = candidate_dir / audio_fn
+                        if c1.is_file():
+                            source_audio_path = c1
+                            break
+                        c2 = candidate_dir / Path(audio_fn).name
+                        if c2.is_file():
+                            source_audio_path = c2
+                            break
+                        # Search direct subdirectories of candidate_dir
+                        for sub in candidate_dir.iterdir():
+                            if sub.is_dir():
+                                c_sub = sub / Path(audio_fn).name
+                                if c_sub.is_file():
+                                    source_audio_path = c_sub
+                                    break
+                        if source_audio_path is not None:
+                            break
+            if source_audio_path is None and Path(audio_fn).is_file():
                 source_audio_path = Path(audio_fn)
 
         if source_audio_path is None:

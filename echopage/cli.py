@@ -266,11 +266,19 @@ def run_build(args):
             shutil.rmtree(temp_wav_dir, ignore_errors=True)
             log.debug("Cleaned up temporary WAV directory %s", temp_wav_dir)
 
+    # Look for split audio directory in work_dir
+    audio_source_for_pack = list(audio_files) if isinstance(audio_files, (list, tuple)) else [audio_files]
+    if len(audio_source_for_pack) == 1:
+        single_stem = Path(audio_source_for_pack[0]).stem
+        split_cand = work_dir / single_stem
+        if split_cand.is_dir():
+            audio_source_for_pack = [split_cand]
+
     _phase(
         "package",
         packager.package,
         args.epub,
-        audio_files,
+        audio_source_for_pack,
         alignment,
         args.output,
         work_dir=epub_dir,
