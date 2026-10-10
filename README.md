@@ -26,15 +26,31 @@ Compatible with Media Overlays-capable readers including **Thorium Reader**, **A
 
 ## Installation
 
+### Quick Automated Setup (Recommended)
+
+Run the automated setup script for your platform. It automatically detects Python, FFmpeg, and GPU/CUDA hardware, creates the `.venv` virtual environment, installs all dependencies (including WhisperX and PyTorch with CUDA for RTX GPUs), and pre-caches NLTK tokenizers:
+
+**On Linux / WSL2 / macOS:**
+```sh
+./setup.sh
+```
+
+**On Windows (PowerShell):**
+```powershell
+.\setup.ps1
+```
+
+### Manual Installation
+
 ```sh
 git clone https://github.com/XiaosongWen/EchoPage.git
 cd EchoPage
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[align,dev]"
 ```
 
-> **Note:** Homebrew Python enforces PEP 668. Always activate the virtual environment (`source .venv/bin/activate`) before running `echopage` or `pytest`.
+> **Note:** Always activate the virtual environment (`source .venv/bin/activate` or `.\.venv\Scripts\Activate.ps1`) before running `echopage` or `pytest`.
 
 ---
 
