@@ -40,10 +40,10 @@ The system assumes the user possesses the source `.epub` file and corresponding 
                             │
                             ▼
               [Phase 4: echopage.packager]
-               ├── packager.xhtml: Inject DOM span IDs (<span id="mo_s_XXXX">)
-               ├── packager.smil: Synthesize SMIL 3.0 (<seq>, <par>, <audio>)
-               ├── packager.opf: Register overlays & active CSS in package.opf
-               └── packager.epub_zip: Store mimetype uncompressed, Deflate package
+               ├── XHTML span injection: Inject DOM span IDs (<span id="mo_s_XXXX">)
+               ├── SMIL synthesis: Synthesize SMIL 3.0 (<seq>, <par>, <audio>)
+               ├── OPF manifest updates: Register overlays & active CSS in package.opf
+               └── Container ZIP: Store mimetype uncompressed, Deflate package
                             │
                             ▼
               [Final Synchronized EPUB 3 Package]
@@ -129,14 +129,10 @@ When `--model-size auto` is specified (default):
 
 ### 3.4 EPUB 3 Media Overlays Packager (`echopage.packager`)
 
-#### Modular Architecture
-The packager is implemented as a specialized package:
-* `packager/xhtml.py`: DOM ID Mutation
-* `packager/smil.py`: SMIL 3.0 Document Synthesis
-* `packager/opf.py`: OPF Package Manifest & Metadata Upgrade
-* `packager/epub_zip.py`: Compliant EPUB Zip Compression & Validation
+#### Functional Architecture
+The packager module (`echopage/packager.py`) encapsulates the four core packaging phases:
 
-#### 1. DOM ID Mutation (`xhtml.py`)
+#### 1. DOM ID Mutation (`inject_alignment_spans`)
 Wraps each aligned sentence in an inline span containing its unique element ID:
 ```html
 <p>
@@ -145,7 +141,7 @@ Wraps each aligned sentence in an inline span containing its unique element ID:
 </p>
 ```
 
-#### 2. SMIL 3.0 Document Synthesis (`smil.py`)
+#### 2. SMIL 3.0 Document Synthesis (`generate_chapter_smil`, `copy_chapter_audio`)
 Generates valid SMIL 3.0 XML documents linking text IDs to audio timestamps:
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -176,7 +172,7 @@ Generates valid SMIL 3.0 XML documents linking text IDs to audio timestamps:
   * Registers SMIL items with `media-type="application/smil+xml"`.
   * Registers audio tracks with proper MIME types (`audio/mpeg`, `audio/mp4`).
 
-#### 4. Container Packaging & Compression (`epub_zip.py`)
+#### 4. Container Packaging & Compression (`zip_epub_container`, `validate_epub`)
 * First entry in zip archive is stored with `ZIP_STORED` (uncompressed) at offset 0: `mimetype` containing `application/epub+zip`.
 * All subsequent entries compressed using `ZIP_DEFLATED`.
 * Validates output with EPUBCheck if installed on the host.
@@ -248,11 +244,11 @@ All core modules and technical specifications are 100% implemented, tested, and 
   - [x] WhisperX neural forced alignment pipeline.
   - [x] Hardware-aware VRAM model auto-selection (`auto` -> `large-v3`, `medium`, `small`).
   - [x] Intermediate `alignment.json` serialization and cache invalidation (`--force`).
-- [x] **Module 4: Media Overlays Packager (`echopage/packager/`)**
-  - [x] `xhtml.py`: Clean inline `<span>` ID injection.
-  - [x] `smil.py`: SMIL 3.0 XML playlist generation.
-  - [x] `opf.py`: EPUB 2/3 OPF duration calculation, active class, and manifest overlay binding.
-  - [x] `epub_zip.py`: Standard-compliant zip packaging (`mimetype` uncompressed first) and EPUBCheck validation.
+- [x] **Module 4: Media Overlays Packager (`echopage/packager.py`)**
+  - [x] Clean inline `<span>` ID injection (`inject_alignment_spans`).
+  - [x] SMIL 3.0 XML playlist generation (`generate_chapter_smil`, `copy_chapter_audio`).
+  - [x] EPUB 2/3 OPF duration calculation, active class, and manifest overlay binding (`update_opf_manifest`).
+  - [x] Standard-compliant zip packaging (`mimetype` uncompressed first) and EPUBCheck validation (`zip_epub_container`).
 - [x] **Module 5: CLI & Automation (`echopage/cli.py`, `setup.sh`, `setup.ps1`)**
   - [x] Unified CLI with full parameter support and isolated subcommands.
   - [x] Cross-platform one-click setup scripts (Linux, macOS, Windows PowerShell).
