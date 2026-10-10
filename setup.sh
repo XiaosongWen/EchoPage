@@ -88,24 +88,40 @@ else
     log_warn "FFmpeg could not be automatically installed. Audio conversion features may fail until FFmpeg is installed."
 fi
 
-# 3. Create Virtual Environment
+# 3. Check / Install uv (EchoPage strictly uses uv, not pip)
+log_info "Checking for uv package manager..."
+if ! command -v uv >/dev/null 2>&1; then
+    log_warn "uv is not found on PATH. Attempting automatic installation..."
+    if command -v curl >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO- https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+    fi
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+    log_error "uv is required for EchoPage environment setup but was not found."
+    log_info "Please install uv manually: https://docs.astral.sh/uv/getting-started/installation/"
+    exit 1
+fi
+
+log_success "Found uv: $(uv --version)"
+
+# 4. Create Virtual Environment with uv
 VENV_DIR=".venv"
 if [ ! -d "$VENV_DIR" ]; then
-    log_info "Creating virtual environment at '$VENV_DIR'..."
-    "$PYTHON" -m venv "$VENV_DIR"
+    log_info "Creating virtual environment at '$VENV_DIR' using uv..."
+    uv venv "$VENV_DIR" --python "$PYTHON"
     log_success "Virtual environment created."
 else
     log_info "Using existing virtual environment at '$VENV_DIR'."
 fi
 
 VENV_PYTHON="$VENV_DIR/bin/python"
-VENV_PIP="$VENV_DIR/bin/pip"
 
-# Ensure pip is up to date
-log_info "Upgrading pip, setuptools, and wheel..."
-"$VENV_PIP" install --upgrade pip setuptools wheel -q
-
-# 4. Detect GPU and Install PyTorch
+# 5. Detect GPU and Install PyTorch via uv
 log_info "Detecting compute hardware..."
 HAS_NVIDIA_GPU=false
 if command -v nvidia-smi >/dev/null 2>&1; then
@@ -117,26 +133,26 @@ fi
 if [ "$HAS_NVIDIA_GPU" = true ]; then
     GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1)
     log_success "NVIDIA GPU detected: $GPU_NAME"
-    log_info "Installing PyTorch with CUDA 12.4 support (accelerated for RTX GPUs)..."
-    "$VENV_PIP" install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+    log_info "Installing PyTorch with CUDA 12.4 support via uv..."
+    uv pip install --python "$VENV_PYTHON" torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 else
     if [ "$(uname)" = "Darwin" ]; then
-        log_info "Running on macOS (Apple Silicon / Intel). Installing PyTorch for macOS..."
+        log_info "Running on macOS (Apple Silicon / Intel). Installing PyTorch for macOS via uv..."
     else
-        log_info "No NVIDIA GPU detected. Installing CPU PyTorch..."
+        log_info "No NVIDIA GPU detected. Installing CPU PyTorch via uv..."
     fi
-    "$VENV_PIP" install torch torchvision torchaudio
+    uv pip install --python "$VENV_PYTHON" torch torchvision torchaudio
 fi
 
-# 5. Install EchoPage and dependencies
-log_info "Installing EchoPage and alignment dependencies (WhisperX, lxml, nltk)..."
-"$VENV_PIP" install -e ".[align,dev]"
+# 6. Install EchoPage and dependencies via uv
+log_info "Installing EchoPage and alignment dependencies (WhisperX, lxml, nltk) via uv..."
+uv pip install --python "$VENV_PYTHON" -e ".[align,dev]"
 
-# 6. Pre-cache NLTK Tokenizer Models
+# 7. Pre-cache NLTK Tokenizer Models
 log_info "Pre-caching NLTK sentence tokenizers (punkt, punkt_tab)..."
 "$VENV_PYTHON" -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('punkt_tab', quiet=True)"
 
-# 7. Disable Pyannote Telemetry by default
+# 8. Disable Pyannote Telemetry by default
 log_info "Disabling Pyannote default telemetry tracking..."
 "$VENV_PYTHON" -c "
 try:
@@ -146,7 +162,7 @@ except Exception:
     pass
 " 2>/dev/null || true
 
-# 8. Smoke test
+# 9. Smoke test
 log_info "Verifying installation..."
 "$VENV_PYTHON" -c "
 import echopage

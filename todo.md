@@ -19,4 +19,4 @@
 ## Packaging & Distribution
 - [ ] **PyPI Publishing**:
   - Configure automated build and release workflow (e.g. GitHub Actions with `build` and `twine`) to publish `echopage` wheels and source distributions to PyPI.
-  - Enable direct installation via `pip install echopage` without needing to clone the Git repository.
+  - Enable direct installation via `uv pip install echopage` or `uv tool install echopage` without needing to clone the Git repository.

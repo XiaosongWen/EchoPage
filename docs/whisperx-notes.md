@@ -29,8 +29,9 @@ Heavy alignment dependencies are isolated under an optional extra in `pyproject.
 dev = ["pytest"]
 align = ["whisperx"]
 ```
-- Running `pip install -e .` keeps the installation lightweight (~15MB of pure Python / standard parsing wheels: `lxml`, `beautifulsoup4`, `nltk`).
-- Running `pip install -e ".[align]"` installs PyTorch and WhisperX only when alignment capabilities are required.
+- Running `uv pip install -e .` keeps the installation lightweight (~15MB of pure Python / standard parsing wheels: `lxml`, `beautifulsoup4`, `nltk`).
+- Running `uv pip install -e ".[align]"` installs PyTorch and WhisperX only when alignment capabilities are required.
+- **Package Manager Standard:** The project strictly uses `uv` for package management (`uv pip install`), never `pip`.
 
 ---
 
@@ -168,7 +169,7 @@ We verified the generated word timings against the source audio and chapter boun
 
 ## 7. Conclusions for Pipeline Architecture (Task 08 & Beyond)
 
-1. **Keep CLI and default dependencies lightweight**: Keep `align` as an extra (`pip install -e .[align]`). The core EPUB parser, audio splitters, and packager do not require PyTorch.
+1. **Keep CLI and default dependencies lightweight**: Keep `align` as an extra (`uv pip install -e ".[align]"`). The core EPUB parser, audio splitters, and packager do not require PyTorch. EchoPage uses `uv` exclusively.
 2. **Apple Silicon default device**: Default to `device="cpu"` and `compute_type="int8"` on macOS. Attempting `device="mps"` fails for Whisper transcription.
 3. **Audio format**: WhisperX expects 16 kHz mono WAV input. The existing `echopage to-wav` / `to_wav16k()` utility produces the exact format required.
 4. **Alignment Output Schema**: The resulting segment and word structures (`word`, `start`, `end`, `score`) provide the necessary timestamps for Task 08 text-to-audio matching and Task 09 alignment JSON generation.

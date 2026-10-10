@@ -9,6 +9,15 @@ Compatible with Media Overlays-capable readers including **Thorium Reader**, **A
 ## Prerequisites
 
 - **Python 3.10+**
+- **uv** (fast Python package and environment manager — **EchoPage strictly uses `uv` instead of `pip`**):
+  ```sh
+  # macOS / Linux / WSL2
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  # Or via Homebrew
+  brew install uv
+  # Windows (PowerShell)
+  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+  ```
 - **FFmpeg** (audio probing, transcoding, and segment splitting):
   ```sh
   brew install ffmpeg
@@ -19,16 +28,19 @@ Compatible with Media Overlays-capable readers including **Thorium Reader**, **A
   ```
 - **WhisperX** (for neural speech recognition & forced alignment):
   ```sh
-  pip install -e ".[align]"
+  uv pip install -e ".[align]"
   ```
 
 ---
 
 ## Installation
 
+> [!IMPORTANT]
+> **Package Management Standard:** EchoPage standardizes entirely on [`uv`](https://docs.astral.sh/uv/). All virtual environment creation and dependency installations are managed with `uv` (`uv venv`, `uv pip install`). Do **not** use `pip`.
+
 ### Quick Automated Setup (Recommended)
 
-Run the automated setup script for your platform. It automatically detects Python, FFmpeg, and GPU/CUDA hardware, creates the `.venv` virtual environment, installs all dependencies (including WhisperX and PyTorch with CUDA for RTX GPUs), and pre-caches NLTK tokenizers:
+Run the automated setup script for your platform. It automatically detects Python, FFmpeg, and GPU/CUDA hardware, verifies `uv`, creates the `.venv` virtual environment, installs all dependencies (including WhisperX and PyTorch with CUDA for RTX GPUs) via `uv pip`, and pre-caches NLTK tokenizers:
 
 **On Linux / WSL2 / macOS:**
 ```sh
@@ -45,9 +57,9 @@ Run the automated setup script for your platform. It automatically detects Pytho
 ```sh
 git clone https://github.com/XiaosongWen/EchoPage.git
 cd EchoPage
-python3 -m venv .venv
+uv venv
 source .venv/bin/activate
-pip install -e ".[align,dev]"
+uv pip install -e ".[align,dev]"
 ```
 
 > **Note:** Always activate the virtual environment (`source .venv/bin/activate` or `.\.venv\Scripts\Activate.ps1`) before running `echopage` or `pytest`.

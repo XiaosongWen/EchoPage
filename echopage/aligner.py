@@ -489,7 +489,7 @@ def transcribe_and_align_audio(
     except ImportError as e:
         raise AlignmentError(
             "WhisperX is required for audio transcription and forced alignment. "
-            "Please install the optional align extra: pip install -e '.[align]'"
+            "Please install the optional align extra: uv pip install -e '.[align]'"
         ) from e
 
     audio_file = Path(audio_path).resolve()

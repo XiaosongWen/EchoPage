@@ -39,24 +39,39 @@ if (-not $hasFfmpeg -or -not $hasFfprobe) {
     Write-Host "[SUCCESS] FFmpeg and ffprobe are ready." -ForegroundColor Green
 }
 
-# 3. Create Virtual Environment
+# 3. Check for uv (EchoPage strictly uses uv, not pip)
+Write-Host "[INFO] Checking for uv package manager..." -ForegroundColor Cyan
+$hasUv = (Get-Command uv -ErrorAction SilentlyContinue) -ne $null
+if (-not $hasUv) {
+    Write-Host "[WARNING] uv is not found on PATH. Attempting automatic installation..." -ForegroundColor Yellow
+    try {
+        powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+        $env:Path = "$HOME\.local\bin;$HOME\.cargo\bin;$env:Path"
+        $hasUv = (Get-Command uv -ErrorAction SilentlyContinue) -ne $null
+    } catch {
+        Write-Warning "Automatic uv installation failed."
+    }
+}
+
+if (-not $hasUv) {
+    Write-Error "uv is required for EchoPage. Please install uv manually: https://docs.astral.sh/uv/getting-started/installation/ or run 'winget install astral-sh.uv'"
+    exit 1
+}
+Write-Host "[SUCCESS] Found uv: $(uv --version)" -ForegroundColor Green
+
+# 4. Create Virtual Environment with uv
 $venvPath = Join-Path $PSScriptRoot ".venv"
 if (-not (Test-Path $venvPath)) {
-    Write-Host "[INFO] Creating virtual environment at .venv..." -ForegroundColor Cyan
-    python -m venv .venv
+    Write-Host "[INFO] Creating virtual environment at .venv using uv..." -ForegroundColor Cyan
+    uv venv .venv
     Write-Host "[SUCCESS] Virtual environment created." -ForegroundColor Green
 } else {
     Write-Host "[INFO] Using existing virtual environment at .venv." -ForegroundColor Cyan
 }
 
-$venvPip = Join-Path $venvPath "Scripts\pip.exe"
 $venvPython = Join-Path $venvPath "Scripts\python.exe"
 
-# Upgrade pip
-Write-Host "[INFO] Upgrading pip, setuptools, and wheel..." -ForegroundColor Cyan
-& $venvPip install --upgrade pip setuptools wheel --quiet
-
-# 4. Detect NVIDIA GPU
+# 5. Detect NVIDIA GPU and Install PyTorch via uv
 Write-Host "[INFO] Detecting GPU hardware..." -ForegroundColor Cyan
 $hasNvidia = (Get-Command nvidia-smi -ErrorAction SilentlyContinue) -ne $null
 
@@ -64,26 +79,26 @@ if ($hasNvidia) {
     try {
         $gpuName = nvidia-smi --query-gpu=name --format=csv,noheader | Select-Object -First 1
         Write-Host "[SUCCESS] NVIDIA GPU detected: $gpuName" -ForegroundColor Green
-        Write-Host "[INFO] Installing PyTorch with CUDA 12.4 support (accelerated for RTX GPUs)..." -ForegroundColor Cyan
-        & $venvPip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+        Write-Host "[INFO] Installing PyTorch with CUDA 12.4 support via uv..." -ForegroundColor Cyan
+        uv pip install --python $venvPython torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
     } catch {
-        Write-Host "[INFO] Failed to query nvidia-smi. Falling back to standard PyTorch..." -ForegroundColor Yellow
-        & $venvPip install torch torchvision torchaudio
+        Write-Host "[INFO] Failed to query nvidia-smi. Falling back to standard PyTorch via uv..." -ForegroundColor Yellow
+        uv pip install --python $venvPython torch torchvision torchaudio
     }
 } else {
-    Write-Host "[INFO] No NVIDIA GPU detected. Installing standard PyTorch..." -ForegroundColor Cyan
-    & $venvPip install torch torchvision torchaudio
+    Write-Host "[INFO] No NVIDIA GPU detected. Installing standard PyTorch via uv..." -ForegroundColor Cyan
+    uv pip install --python $venvPython torch torchvision torchaudio
 }
 
-# 5. Install EchoPage with extras
-Write-Host "[INFO] Installing EchoPage and alignment dependencies..." -ForegroundColor Cyan
-& $venvPip install -e ".[align,dev]"
+# 6. Install EchoPage and dependencies via uv
+Write-Host "[INFO] Installing EchoPage and alignment dependencies via uv..." -ForegroundColor Cyan
+uv pip install --python $venvPython -e ".[align,dev]"
 
-# 6. Pre-cache NLTK models
+# 7. Pre-cache NLTK models
 Write-Host "[INFO] Pre-caching NLTK sentence tokenizers (punkt, punkt_tab)..." -ForegroundColor Cyan
 & $venvPython -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('punkt_tab', quiet=True)"
 
-# 7. Disable Pyannote telemetry
+# 8. Disable Pyannote telemetry
 Write-Host "[INFO] Disabling Pyannote default telemetry tracking..." -ForegroundColor Cyan
 & $venvPython -c "
 try:
@@ -93,7 +108,7 @@ except Exception:
     pass
 " 2>$null
 
-# 8. Smoke test
+# 9. Smoke test
 Write-Host "[INFO] Verifying installation..." -ForegroundColor Cyan
 & $venvPython -c "
 import echopage

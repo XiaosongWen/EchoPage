@@ -4,7 +4,7 @@
 WhisperX transcribes speech (Whisper) and then aligns words to exact times (wav2vec2). It is heavy: it needs PyTorch and downloads models. Apple Silicon (`mps`) support is partial, so `cpu` may be needed. Learn how it behaves before writing real code.
 
 ## What to do
-1. Install WhisperX in the project environment as an optional extra (`pip install -e .[align]`).
+1. Install WhisperX in the project environment as an optional extra (`uv pip install -e ".[align]"`).
 2. Write `scripts/whisperx_spike.py` that:
    - Loads the fixture WAV.
    - Transcribes with the `small` model.
@@ -16,4 +16,4 @@ WhisperX transcribes speech (Whisper) and then aligns words to exact times (wav2
 - [x] The spike script runs end to end on the fixture and prints word start/end times in seconds.
 - [x] Timings roughly match the audio (spot-check 3 words by listening).
 - [x] `docs/whisperx-notes.md` records versions, devices that work, speed and model sizes.
-- [x] Heavy dependencies are optional extras, so `pip install -e .` stays light.
+- [x] Heavy dependencies are optional extras, so `uv pip install -e .` stays light.

@@ -251,5 +251,6 @@ All core modules and technical specifications are 100% implemented, tested, and 
   - [x] Standard-compliant zip packaging (`mimetype` uncompressed first) and EPUBCheck validation (`zip_epub_container`).
 - [x] **Module 5: CLI & Automation (`echopage/cli.py`, `setup.sh`, `setup.ps1`)**
   - [x] Unified CLI with full parameter support and isolated subcommands.
-  - [x] Cross-platform one-click setup scripts (Linux, macOS, Windows PowerShell).
+  - [x] Cross-platform automated setup scripts powered exclusively by Astral `uv` (Linux, macOS, Windows PowerShell).
+  - [x] Package management standard: Strict reliance on `uv` (`uv venv`, `uv pip install`); `pip` is not used.
   - [x] 238 unit and integration tests passing.

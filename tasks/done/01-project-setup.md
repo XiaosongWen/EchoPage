@@ -12,7 +12,7 @@ Nothing exists yet. We need a Python package, a CLI entry point and a place for 
 6. Add a README that says how to install FFmpeg (`brew install ffmpeg`) and the package.
 
 ## Acceptance Criteria
-- [x] `pip install -e .` succeeds in a fresh virtualenv.
+- [x] `uv pip install -e .` succeeds in a fresh virtualenv.
 - [x] `echopage --help` runs and prints usage.
 - [x] `pytest` runs (even with 0 or 1 placeholder test) and exits 0.
 - [x] `ffmpeg -version` is documented as a prerequisite.
