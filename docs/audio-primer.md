@@ -111,126 +111,30 @@ In EchoPage, timestamps are handled in two different formats depending on the pi
 
 ---
 
-## 6. Practical Command Exercises & Real Outputs
+## 6. Practical FFmpeg Command Reference
 
-Below are actual command executions performed against the test fixtures under [`tests/fixtures/`](file:///Users/tomaswen/workspace/EchoPage/tests/fixtures/).
+Below are the key commands used by EchoPage and how to interpret their results.
 
-### 6.1 Inspecting Chapters & Format with `ffprobe`
-
-**Command**:
+### 6.1 Inspecting Chapters & Duration with `ffprobe`
 ```bash
-ffprobe -show_format -show_chapters tests/fixtures/book.m4b
+ffprobe -v error -show_chapters -show_entries format=duration:format_tags=title -of json input.m4b
 ```
+**Key JSON Output Fields**:
+- `format.duration`: Total audio file length in seconds (e.g. `45.227982`).
+- `chapters`: Array of embedded chapter markers:
+  - `start_time` / `end_time`: Chapter boundary in fractional seconds.
+  - `tags.title`: Chapter name (e.g. `"Chapter 1: The Tortoise and the Hare"`).
 
-**Output**:
-```text
-ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers
-  built with Apple clang version 21.0.0 (clang-2100.0.123.102)
-  configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/8.1.2_1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags= --enable-ffplay --enable-gpl --enable-libsvtav1 --enable-libopus --enable-libx264 --enable-libmp3lame --enable-libdav1d --enable-libvmaf --enable-libvpx --enable-libx265 --enable-openssl --enable-videotoolbox --enable-audiotoolbox --enable-neon
-  libavutil      60. 26.102 / 60. 26.102
-  libavcodec     62. 28.102 / 62. 28.102
-  libavformat    62. 12.102 / 62. 12.102
-  libavdevice    62.  3.102 / 62.  3.102
-  libavfilter    11. 14.102 / 11. 14.102
-  libswscale      9.  5.102 /  9.  5.102
-  libswresample   6.  3.102 /  6.  3.102
-Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'tests/fixtures/book.m4b':
-  Metadata:
-    major_brand     : M4A 
-    minor_version   : 512
-    compatible_brands: M4A isomiso2
-    title           : Aesop's Fables Sample
-    artist          : Aesop
-    album           : EchoPage Test Fixtures
-    encoder         : Lavf62.12.102
-  Duration: 00:00:45.23, start: 0.000000, bitrate: 104 kb/s
-  Chapters:
-    Chapter #0:0: start 0.000000, end 23.833000
-      Metadata:
-        title           : Chapter 1: The Tortoise and the Hare
-    Chapter #0:1: start 23.833000, end 45.159000
-      Metadata:
-        title           : Chapter 2: The North Wind and the Sun
-  Stream #0:0[0x1](und): Audio: aac (LC) (mp4a / 0x6134706D), 22050 Hz, mono, fltp, 103 kb/s (default)
-    Metadata:
-      handler_name    : SoundHandler
-  Stream #0:1[0x2](eng): Data: bin_data (text / 0x74786574), 0 kb/s
-    Metadata:
-      handler_name    : SubtitleHandler
-Unsupported codec with id 98314 for input stream 1
-[CHAPTER]
-id=0
-time_base=1/1000
-start=0
-start_time=0.000000
-end=23833
-end_time=23.833000
-TAG:title=Chapter 1: The Tortoise and the Hare
-[/CHAPTER]
-[CHAPTER]
-id=1
-time_base=1/1000
-start=23833
-start_time=23.833000
-end=45159
-end_time=45.159000
-TAG:title=Chapter 2: The North Wind and the Sun
-[/CHAPTER]
-[FORMAT]
-filename=tests/fixtures/book.m4b
-nb_streams=2
-nb_programs=0
-nb_stream_groups=0
-format_name=mov,mp4,m4a,3gp,3g2,mj2
-format_long_name=QuickTime / MOV
-start_time=0.000000
-duration=45.227982
-size=593451
-bit_rate=104970
-probe_score=100
-TAG:major_brand=M4A 
-TAG:minor_version=512
-TAG:compatible_brands=M4A isomiso2
-TAG:title=Aesop's Fables Sample
-TAG:artist=Aesop
-TAG:album=EchoPage Test Fixtures
-TAG:encoder=Lavf62.12.102
-[/FORMAT]
-```
-
-### 6.2 Resampling Audio to 16 kHz Mono WAV with `ffmpeg`
-
-**Command**:
+### 6.2 Splitting Chapters with Stream Copy (Instant, Zero Quality Loss)
 ```bash
-ffmpeg -i tests/fixtures/book.mp3 -ac 1 -ar 16000 tests/fixtures/sample_16k.wav
+ffmpeg -y -ss <START_SECONDS> -to <END_SECONDS> -i input.m4b -c copy output_part.m4b
 ```
+- `-c copy`: Copies the encoded AAC audio packets directly into the new container without decoding or re-encoding. Takes less than a second per chapter.
 
-**Output**:
-```text
-ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers
-  built with Apple clang version 21.0.0 (clang-2100.0.123.102)
-  configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/8.1.2_1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags= --enable-ffplay --enable-gpl --enable-libsvtav1 --enable-libopus --enable-libx264 --enable-libmp3lame --enable-libdav1d --enable-libvmaf --enable-libvpx --enable-libx265 --enable-openssl --enable-videotoolbox --enable-audiotoolbox --enable-neon
-  libavutil      60. 26.102 / 60. 26.102
-  libavcodec     62. 28.102 / 62. 28.102
-  libavformat    62. 12.102 / 62. 12.102
-  libavdevice    62.  3.102 / 62.  3.102
-  libavfilter    11. 14.102 / 11. 14.102
-  libswscale      9.  5.102 /  9.  5.102
-  libswresample   6.  3.102 /  6.  3.102
-Input #0, mp3, from 'tests/fixtures/book.mp3':
-  Metadata:
-    encoder         : Lavf62.12.102
-  Duration: 00:00:45.23, start: 0.050113, bitrate: 73 kb/s
-  Stream #0:0: Audio: mp3 (mp3float), 22050 Hz, mono, fltp, 72 kb/s, start 0.050113
-Stream mapping:
-  Stream #0:0 -> #0:0 (mp3 (mp3float) -> pcm_s16le (native))
-Press [q] to stop, [?] for help
-Output #0, wav, to 'tests/fixtures/sample_16k.wav':
-  Metadata:
-    ISFT            : Lavf62.12.102
-  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 16000 Hz, mono, s16, 256 kb/s
-    Metadata:
-      encoder         : Lavc62.28.102 pcm_s16le
-[out#0/wav @ 0x93cc38180] video:0KiB audio:1413KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.005389%
-size=    1413KiB time=00:00:45.22 bitrate= 256.0kbits/s speed=2.19e+03x elapsed=0:00:00.02    
+### 6.3 Resampling to 16 kHz Mono WAV (Speech Recognition Input)
+```bash
+ffmpeg -y -i input.m4b -ac 1 -ar 16000 output_16k.wav
 ```
+- `-ac 1`: Downmixes stereo to 1-channel mono.
+- `-ar 16000`: Sets audio clock to 16,000 Hz, matching Whisper and Wav2Vec2 acoustic models.
+

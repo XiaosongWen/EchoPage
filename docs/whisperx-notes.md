@@ -69,28 +69,35 @@ When executing WhisperX with the `small` model and English language alignment:
 - **`align_device="cpu"`**: **Supported and fastest on Apple Silicon.** Aligned 45 seconds of speech in 1.06s (~42x realtime).
 - **`align_device="mps"`**: **Supported, but slower.** PyTorch successfully loads and runs the wav2vec2 model on Apple Silicon MPS (`torch.backends.mps.is_available() == True`). However, due to GPU dispatch and synchronization overhead on small batch sizes, alignment took 2.12s (21x realtime) on MPS versus 1.06s on CPU.
 
-### Cross-Platform Hardware Auto-Detection (Mac vs PC)
-To seamlessly support both macOS (Apple Silicon/Intel) and PC (Windows/Linux with optional NVIDIA CUDA GPUs):
+### Cross-Platform Hardware & Model Auto-Selection (Mac vs PC)
+To seamlessly maximize performance across macOS (Apple Silicon/Intel) and PC (Windows/Linux with optional NVIDIA CUDA GPUs), EchoPage automatically probes hardware capabilities:
 
 ```python
 import torch
 
 def get_optimal_device() -> tuple[str, str]:
-    """Auto-detect optimal compute device and precision.
-    
-    - PC/Linux with NVIDIA GPU: ('cuda', 'float16')
-    - macOS / PC without CUDA:  ('cpu', 'int8')
-    """
+    """Auto-detect optimal compute device and precision."""
     if torch.cuda.is_available():
         return "cuda", "float16"
     return "cpu", "int8"
+
+def get_optimal_model_size(device: str | None = None) -> str:
+    """Auto-select largest Whisper model that fits comfortably in hardware."""
+    if torch.cuda.is_available():
+        vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        if vram_gb >= 7.0: return "large-v3"   # RTX 3070 (8GB), 3080, 4070, 4090
+        if vram_gb >= 5.0: return "medium"     # 6GB GPUs
+        if vram_gb >= 3.0: return "small"      # 4GB GPUs
+        return "base"
+    return "small"  # CPU/Mac fallback (prevents 20+ hour CPU runs)
 ```
 
-| Environment | Detected Device | Recommended `compute_type` | Rationale |
-|---|---|---|---|
-| **PC / Linux with NVIDIA GPU** | `cuda` | `float16` | CTranslate2 and PyTorch leverage CUDA Tensor Cores for maximum throughput. |
-| **PC / Linux without NVIDIA GPU** | `cpu` | `int8` | CTranslate2 utilizes AVX-512 / AVX2 integer instructions. |
-| **Apple Silicon Mac** | `cpu` | `int8` | CTranslate2 lacks Metal/MPS support; CPU ARM NEON delivers ~9.5x realtime transcription; alignment is 2x faster on CPU than MPS. |
+| Environment | Detected Device | Auto Model | Precision | Expected Throughput | Rationale |
+|---|---|---|---|---|---|
+| **NVIDIA GPU ($\ge$ 7GB, e.g. RTX 3070)** | `cuda` | `large-v3` | `float16` | **15x ~ 30x realtime** | CUDA Tensor Cores enable full `large-v3` precision in ~30 min for a full book. |
+| **NVIDIA GPU (5~6GB)** | `cuda` | `medium` | `float16` | **25x ~ 35x realtime** | Balances high transcription accuracy with conservative VRAM footprint. |
+| **NVIDIA GPU (3~4GB)** | `cuda` | `small` | `float16` | **35x ~ 45x realtime** | Fast throughput for entry-level GPUs. |
+| **Apple Silicon Mac / CPU** | `cpu` | `small` | `int8` | **0.3x ~ 1.0x realtime** | CTranslate2 lacks Metal/MPS support; `small` avoids 20+ hour CPU runs. |
 
 ---
 

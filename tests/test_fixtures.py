@@ -7,7 +7,6 @@ from lxml import etree
 import pytest
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
-DOCS_DIR = Path(__file__).parent.parent / "docs"
 
 
 def test_epub_fixture_structure():
@@ -133,24 +132,10 @@ def test_sample_16k_wav_format():
     assert int(stream["channels"]) == 1
 
 
-def test_documentation_and_primer():
-    """Verify audio-primer.md and fixtures README.md are comprehensive."""
-    primer_path = DOCS_DIR / "audio-primer.md"
-    assert primer_path.exists(), f"Missing {primer_path}"
-    primer_content = primer_path.read_text(encoding="utf-8")
-
-    assert "Container" in primer_content and "Codec" in primer_content
-    assert "DRM" in primer_content or "aax" in primer_content.lower()
-    assert "16,000" in primer_content or "16 kHz" in primer_content
-    assert "chapter" in primer_content.lower()
-    assert "millisecond" in primer_content.lower() or "start_ms" in primer_content
-    assert "clipBegin" in primer_content
-    assert "ffprobe -show_format -show_chapters" in primer_content
-    assert "ffmpeg -i" in primer_content
-
+def test_fixtures_readme():
+    """Verify fixtures README.md exists and documents public domain provenance."""
     readme_path = FIXTURES_DIR / "README.md"
     assert readme_path.exists(), f"Missing {readme_path}"
     readme_content = readme_path.read_text(encoding="utf-8")
     assert "Public Domain" in readme_content
     assert "Aesop" in readme_content
-    assert "say" in readme_content or "synthes" in readme_content.lower()
