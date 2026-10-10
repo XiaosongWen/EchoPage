@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import difflib
 import logging
+import os
 import re
 import shutil
 import time
@@ -468,6 +469,64 @@ def get_optimal_model_size(device: str | None = None) -> str:
     return "small"
 
 
+def is_whisper_model_cached(model_size: str) -> tuple[bool, str]:
+    """Check if a Whisper model is already present in the local cache or filesystem.
+
+    Returns
+    -------
+    tuple[bool, str]
+        (is_cached, repo_id_or_path)
+    """
+    if os.path.isdir(str(model_size)):
+        return True, str(model_size)
+    try:
+        from faster_whisper.utils import _MODELS
+        from huggingface_hub import try_to_load_from_cache
+
+        repo_id = _MODELS.get(model_size, model_size)
+        cached_file = try_to_load_from_cache(repo_id, "model.bin")
+        if isinstance(cached_file, str) and os.path.exists(cached_file):
+            return True, repo_id
+        return False, repo_id
+    except Exception:
+        return False, str(model_size)
+
+
+def is_align_model_cached(language_code: str) -> tuple[bool, str]:
+    """Check if an alignment model for the language is already cached locally.
+
+    Returns
+    -------
+    tuple[bool, str]
+        (is_cached, model_or_repo_name)
+    """
+    try:
+        import torch
+        from whisperx.alignment import DEFAULT_ALIGN_MODELS_HF, DEFAULT_ALIGN_MODELS_TORCH
+
+        if language_code in DEFAULT_ALIGN_MODELS_TORCH:
+            bundle_name = DEFAULT_ALIGN_MODELS_TORCH[language_code]
+            checkpoints_dir = Path(torch.hub.get_dir()) / "checkpoints"
+            if checkpoints_dir.is_dir():
+                for f in checkpoints_dir.iterdir():
+                    if f.suffix == ".pth" and ("wav2vec2" in f.name.lower() or "voxpopuli" in f.name.lower()):
+                        return True, bundle_name
+            return False, bundle_name
+
+        if language_code in DEFAULT_ALIGN_MODELS_HF:
+            repo_id = DEFAULT_ALIGN_MODELS_HF[language_code]
+            from huggingface_hub import try_to_load_from_cache
+
+            c1 = try_to_load_from_cache(repo_id, "pytorch_model.bin")
+            c2 = try_to_load_from_cache(repo_id, "model.safetensors")
+            if (isinstance(c1, str) and os.path.exists(c1)) or (isinstance(c2, str) and os.path.exists(c2)):
+                return True, repo_id
+            return False, repo_id
+    except Exception:
+        pass
+    return False, language_code
+
+
 def transcribe_and_align_audio(
     audio_path: Union[str, Path],
     model_size: str = "auto",
@@ -520,6 +579,33 @@ def transcribe_and_align_audio(
 
     # Load Whisper model if not passed
     if whisper_model is None:
+        cached_whisper, repo_id = is_whisper_model_cached(model_size)
+        if not cached_whisper:
+            log.info(
+                "Whisper model '%s' (%s) not found in local cache. Downloading weights from Hugging Face Hub (first-time setup, please wait)...",
+                model_size,
+                repo_id,
+            )
+            t_dl = time.perf_counter()
+            try:
+                from faster_whisper.utils import download_model
+
+                download_model(model_size)
+                dl_elapsed = time.perf_counter() - t_dl
+                log.info(
+                    "Whisper model '%s' download completed (took %s)",
+                    model_size,
+                    format_duration(dl_elapsed),
+                )
+            except Exception as e:
+                log.warning(
+                    "Pre-download check for '%s' encountered an error: %s. Proceeding with standard loader...",
+                    model_size,
+                    e,
+                )
+        else:
+            log.info("Whisper model '%s' found in local cache", model_size)
+
         log.info("Loading Whisper model '%s' (device=%s, compute_type=%s)...", model_size, device, compute_type)
         t_model = time.perf_counter()
         whisper_model = whisperx.load_model(
@@ -547,6 +633,16 @@ def transcribe_and_align_audio(
     # Load wav2vec2 alignment model if not passed
     detected_lang = result.get("language", language)
     if align_model is None or align_metadata is None:
+        cached_align, align_name = is_align_model_cached(detected_lang)
+        if not cached_align:
+            log.info(
+                "Alignment model for language '%s' (%s) not found in local cache. Downloading weights...",
+                detected_lang,
+                align_name,
+            )
+        else:
+            log.info("Alignment model for language '%s' found in local cache", detected_lang)
+
         log.info("Loading alignment model for language '%s' (device=%s)...", detected_lang, align_device)
         t_align_load = time.perf_counter()
         align_model, align_metadata = whisperx.load_align_model(
