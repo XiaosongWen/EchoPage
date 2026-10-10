@@ -212,7 +212,7 @@ def decrypt_file(
     # Construct exact FFmpeg command
     if fmt == FORMAT_AAX:
         cmd = [
-            "ffmpeg",
+            ffmpeg_bin,
             "-activation_bytes",
             str(activation_bytes),
             "-i",
@@ -224,7 +224,7 @@ def decrypt_file(
         ]
     else:  # FORMAT_AAXC
         cmd = [
-            "ffmpeg",
+            ffmpeg_bin,
             "-audible_key",
             str(effective_key),
             "-audible_iv",
