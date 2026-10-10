@@ -237,3 +237,18 @@ def test_cli_build_skip_spine(capsys, tmp_path):
     assert "chapter01" not in out
 
 
+def test_cli_verbose_logger_filtering(tmp_path):
+    import logging
+    epub = Path(__file__).parent / "fixtures" / "book.epub"
+    audio = Path(__file__).parent / "fixtures" / "book.m4b"
+    out_file = tmp_path / "out.epub"
+
+    code = main(["build", "--epub", str(epub), "--audio", str(audio), "--output", str(out_file), "--dry-run", "--verbose"])
+    assert code == 0
+    assert logging.getLogger("torio").level == logging.WARNING
+    assert logging.getLogger("matplotlib").level == logging.WARNING
+    # urllib3 remains unmuted for telemetry visibility
+    assert logging.getLogger("urllib3").level != logging.WARNING
+
+
+

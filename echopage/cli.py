@@ -282,6 +282,11 @@ def main(argv=None):
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(message)s", stream=sys.stdout, force=True,
     )
+    if args.verbose:
+        # Suppress noisy internal library debug logs (keep urllib3 visible for network/telemetry tracking)
+        logging.getLogger("torio").setLevel(logging.WARNING)
+        logging.getLogger("matplotlib").setLevel(logging.WARNING)
+        logging.getLogger("numba").setLevel(logging.WARNING)
     validate(args, parser)
     try:
         if args.command == "build":
