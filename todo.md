@@ -15,3 +15,8 @@
   - If a build is interrupted (e.g. Ctrl+C, system sleep, or crash), resuming the build (`echopage build` with the same `work_dir`) automatically loads finished chapters and resumes directly from the first incomplete chapter without re-transcribing finished audio.
   - Respect `--force` to bypass checkpoints and re-align from scratch when requested.
   - Clean up intermediate chapter checkpoints after the final packaged EPUB is successfully built (unless `--keep-temp` is set).
+
+## Packaging & Distribution
+- [ ] **PyPI Publishing**:
+  - Configure automated build and release workflow (e.g. GitHub Actions with `build` and `twine`) to publish `echopage` wheels and source distributions to PyPI.
+  - Enable direct installation via `pip install echopage` without needing to clone the Git repository.
