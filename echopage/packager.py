@@ -741,6 +741,7 @@ def generate_chapter_smil(
     par_prefix: str = "par_",
     validate_xhtml_ids: bool = True,
     audio_file_path: Union[str, Path, None] = None,
+    continuous: bool = False,
 ) -> SmilMetadata:
     """Generate a valid SMIL 3.0 Media Overlays document for a single chapter.
 
@@ -815,16 +816,37 @@ def generate_chapter_smil(
 
     last_end_ms = 0
     prev_start_ms = -1
-    for idx, raw_entry in enumerate(timeline, start=1):
-        start_ms = int(raw_entry["start_ms"])
-        end_ms = int(raw_entry["end_ms"])
+    timeline_entries = list(timeline)
+    total_entries = len(timeline_entries)
+    prev_cont_end_ms = 0
+
+    for idx, raw_entry in enumerate(timeline_entries, start=1):
+        orig_start_ms = int(raw_entry["start_ms"])
+        orig_end_ms = int(raw_entry["end_ms"])
         eid = str(raw_entry["element_id"])
+
+        if continuous and total_entries > 0:
+            if idx == 1:
+                start_ms = 0
+            else:
+                start_ms = prev_cont_end_ms
+
+            if idx < total_entries:
+                next_start_ms = int(timeline_entries[idx]["start_ms"])
+                end_ms = max(orig_end_ms, next_start_ms)
+            else:
+                end_ms = orig_end_ms
+
+            prev_cont_end_ms = end_ms
+        else:
+            start_ms = orig_start_ms
+            end_ms = orig_end_ms
 
         if start_ms < 0 or end_ms < 0:
             raise SmilGenerationError(f"Negative timestamp in entry '{eid}': {start_ms}ms - {end_ms}ms")
         if end_ms < start_ms:
             raise SmilGenerationError(f"Clip end ({end_ms}ms) precedes clip start ({start_ms}ms) in entry '{eid}'")
-        if start_ms < prev_start_ms:
+        if not continuous and start_ms < prev_start_ms:
             raise SmilGenerationError(f"Clip start ({start_ms}ms) out of order in entry '{eid}'")
         prev_start_ms = start_ms
 
@@ -910,6 +932,7 @@ def generate_smil_playlists(
     alignment: Union[str, Path, Sequence[Union[AlignedChapter, dict[str, Any]]]],
     audio_source: Union[str, Path, Sequence[Union[str, Path]], None] = None,
     validate_xhtml_ids: bool = True,
+    continuous: bool = False,
 ) -> dict[str, SmilMetadata]:
     """Generate SMIL 3.0 Media Overlays playlists and copy audio files for all chapters.
 
@@ -1073,6 +1096,7 @@ def generate_smil_playlists(
             audio_rel_path=audio_rel_path,
             validate_xhtml_ids=validate_xhtml_ids,
             audio_file_path=dest_audio,
+            continuous=continuous,
         )
         results[spine_id] = meta
 
@@ -1700,6 +1724,7 @@ def package(
     output: Union[str, Path],
     work_dir: Union[str, Path, None] = None,
     validate_epub: bool = True,
+    continuous: bool = True,
 ) -> Path:
     """High-level packaging pipeline entrypoint.
 
@@ -1721,6 +1746,8 @@ def package(
         Working directory for unpacked files. If None, uses a temporary directory.
     validate_epub : bool, default=True
         Whether to run EPUBCheck validation if installed.
+    continuous : bool, default=True
+        Whether to generate continuous, gapless Media Overlays preserving natural pauses and background music.
 
     Returns
     -------
@@ -1742,7 +1769,7 @@ def package(
         log.info("Injected span IDs into XHTML (took %s)", format_duration(time.perf_counter() - t0))
 
         t0 = time.perf_counter()
-        smil_results = generate_smil_playlists(target, alignment, audio_source=audio)
+        smil_results = generate_smil_playlists(target, alignment, audio_source=audio, continuous=continuous)
         log.info("Generated SMIL 3.0 playlists and copied audio (took %s)", format_duration(time.perf_counter() - t0))
 
         t0 = time.perf_counter()

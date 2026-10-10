@@ -37,6 +37,8 @@ def build_parser():
     b.add_argument("--skip-spine", help="comma-separated list of spine item IDs to skip (e.g. cover,toc)")
     b.add_argument("--auto-map", action=argparse.BooleanOptionalAction, default=True,
                    help="automatically match audio to EPUB chapters and skip non-narrated pages (default: True)")
+    b.add_argument("--continuous", action=argparse.BooleanOptionalAction, default=True,
+                   help="bridge silence and inter-sentence pauses for continuous, natural audio playback without skips (default: True)")
     b.add_argument("--dry-run", action="store_true", help="parse EPUB and audio, print planned mapping without aligning")
     b.add_argument("--verbose", action="store_true", help="enable debug logging")
     # probe subcommand
@@ -282,6 +284,7 @@ def run_build(args):
         alignment,
         args.output,
         work_dir=epub_dir,
+        continuous=getattr(args, "continuous", True),
     )
 
 

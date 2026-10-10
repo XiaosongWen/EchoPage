@@ -446,3 +446,39 @@ def test_cli_generate_smil_missing_directory_errors(tmp_path):
 
     with pytest.raises(SystemExit):
         cli.main(["generate-smil", str(tmp_path), str(tmp_path / "missing_align.json")])
+
+
+def test_continuous_smil_bridges_sentence_gaps(minimal_xhtml, tmp_path):
+    """Test that continuous=True bridges inter-sentence pauses and starts at 0.000s."""
+    smil_path = tmp_path / "continuous.smil"
+    chapter_data = {
+        "spine_item_id": "chapter01",
+        "xhtml_filename": "chapter01.xhtml",
+        "audio_filename": "chapter01.mp3",
+        "timeline": [
+            {"element_id": "mo_s_0001", "start_ms": 1200, "end_ms": 3500},
+            {"element_id": "mo_s_0002", "start_ms": 5000, "end_ms": 8200},
+        ],
+    }
+
+    generate_chapter_smil(
+        chapter=chapter_data,
+        smil_path=smil_path,
+        xhtml_path=minimal_xhtml,
+        audio_rel_path="audio/chapter01.mp3",
+        continuous=True,
+    )
+
+    doc = etree.parse(str(smil_path))
+    audios = doc.xpath("//smil:audio", namespaces={"smil": SMIL_NS})
+    assert len(audios) == 2
+
+    # First sentence starts at 0.000s (covers chapter intro)
+    assert audios[0].get("clipBegin") == "0.000s"
+    # First sentence ends where second sentence begins (5.000s, covering 3.5s-5.0s pause)
+    assert audios[0].get("clipEnd") == "5.000s"
+
+    # Second sentence starts exactly at 5.000s
+    assert audios[1].get("clipBegin") == "5.000s"
+    assert audios[1].get("clipEnd") == "8.200s"
+
