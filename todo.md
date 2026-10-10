@@ -27,6 +27,11 @@ This document tracks upcoming features and enhancements for EchoPage, organized 
   - Maintain safety boundaries (select `workers=1` on 8GB GPU to prevent OOM; select `workers=3` on 24GB GPU, etc.) with explicit override warning.
   - Implement multi-worker chapter alignment dispatch while strictly preserving original EPUB spine order in the final output.
 
+- [ ] **Power Management, Sleep Prevention & Auto-Sleep on Finish** ([tasks/20-power-management-and-anti-sleep.md](file:///mnt/c/Users/242107/Desktop/Project/EchoPage/tasks/20-power-management-and-anti-sleep.md)):
+  - Automatically inhibit system idle sleep during active builds across Windows, WSL2, macOS, and Linux (via OS-native power assertions / keep-awake heartbeats).
+  - Add `--sleep-on-finish` flag (or `--post-action none|sleep|shutdown`) to optionally suspend/sleep the host machine upon successful EPUB build completion.
+  - Ensure power locks are cleanly released in all exit paths and suppress sleep on build errors.
+
 ---
 
 ## Priority 2: Release & Engineering
