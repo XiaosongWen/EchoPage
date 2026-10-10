@@ -20,3 +20,12 @@
 - [ ] **PyPI Publishing**:
   - Configure automated build and release workflow (e.g. GitHub Actions with `build` and `twine`) to publish `echopage` wheels and source distributions to PyPI.
   - Enable direct installation via `uv pip install echopage` or `uv tool install echopage` without needing to clone the Git repository.
+
+## Workspace & Cache Lifecycle
+- [ ] **`--work-dir` Retention and Cleanup Strategy**:
+  - Currently, `work_dir` (including `alignment.json`, chapter audio splits, and unpacked EPUB) is preserved after build completion so that subsequent builds or packaging tweaks can instantly reuse alignment caches.
+  - Investigate and design a proper cleanup/eviction mechanism:
+    - Dedicated cleanup CLI command (e.g. `echopage clean [--all | --older-than <days> | --work-dir <path>]`).
+    - Smart pruning: allow removing bulky raw audio splits / temporary unpacked EPUB files while preserving lightweight metadata (`alignment.json`).
+    - Clarify lifecycle policies between explicit `--work-dir` and auto-generated default workspaces (`.echopage_build_<stem>`).
+

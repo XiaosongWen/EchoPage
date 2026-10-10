@@ -172,7 +172,6 @@ def _phase(name, fn, *a, **kw):
 
 
 def run_build(args):
-    is_default_work_dir = not bool(args.work_dir)
     work_dir = Path(args.work_dir) if args.work_dir else Path(f".echopage_build_{Path(args.epub).stem}")
     work_dir.mkdir(parents=True, exist_ok=True)
     epub_dir = work_dir / "epub"
@@ -236,11 +235,6 @@ def run_build(args):
             print(f"\nModel selection: auto -> '{detected_model}'")
         else:
             print(f"\nModel selection: '{model_setting}'")
-
-        # In dry run, clean up temporary workspace if not --keep-temp and work_dir was auto-generated
-        if not getattr(args, "keep_temp", False) and is_default_work_dir:
-            shutil.rmtree(work_dir, ignore_errors=True)
-            log.debug("Cleaned up temporary dry-run work directory: %s", work_dir)
         return
 
     alignment_json = work_dir / "alignment.json"
@@ -281,16 +275,6 @@ def run_build(args):
         args.output,
         work_dir=epub_dir,
     )
-
-    # Clean up temporary build artifacts upon successful completion unless --keep-temp is set
-    if not getattr(args, "keep_temp", False):
-        if is_default_work_dir:
-            shutil.rmtree(work_dir, ignore_errors=True)
-            log.info("Cleaned up temporary build workspace: %s", work_dir)
-        else:
-            if epub_dir.is_dir():
-                shutil.rmtree(epub_dir, ignore_errors=True)
-                log.debug("Cleaned up temporary unpacked EPUB directory: %s", epub_dir)
 
 
 def main(argv=None):
