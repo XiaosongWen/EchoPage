@@ -150,6 +150,12 @@ Full-length audiobooks (10–30+ hours) are processed chapter-by-chapter rather 
 - **`device 'mps' is unsupported`**: CTranslate2 (used by WhisperX) does not support Apple Silicon MPS for alignment; CPU is automatically selected and delivers optimal throughput.
 - **Alignment Drifting**: Ensure the audio narration unabridged text matches the eBook edition. Preview with `--dry-run` to verify that chapter counts correspond.
 
+## Documentation & Architecture
+
+For deep-dive technical details, data contracts, and internal design specifications:
+- [System Architecture & Specification](ARCHITECTURE.md): Detailed pipeline dataflow, `alignment.json` data contracts, SMIL 3.0 synthesis rules, and OPF metadata specifications.
+- [Technical Guides & Primers](docs/): Detailed notes on audio processing, EPUB span injection, and WhisperX alignment.
+
 ---
 
 ## Testing
