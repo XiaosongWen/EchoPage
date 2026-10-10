@@ -206,7 +206,7 @@ echopage build \
 | `--audible-iv HEX` | Optional | `None` | IV for Audible AAXC (requires `--audible-key`) |
 | `--model-size SIZE` | Optional | `auto` | `auto`, `tiny`, `base`, `small`, `medium`, `large-v1`, `large-v2`, `large-v3` |
 | `--device DEV` | Optional | `auto` | `auto`, `cuda`, `mps`, `cpu` |
-| `--granularity LEVEL` | Optional | `sentence` | `sentence` (default) or `word` |
+| `--granularity LEVEL` | Optional | `sentence` | `sentence` (default); `word` is reserved in CLI schema |
 | `--work-dir DIR` | Optional | `.echopage_build_<stem>` | Scratch workspace for extraction & caching |
 | `--auto-map / --no-auto-map` | Optional | `True` | Heuristic matching of spine chapters to audio |
 | `--skip-spine IDS` | Optional | `None` | Comma-separated spine item IDs to explicitly skip |
